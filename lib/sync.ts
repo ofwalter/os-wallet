@@ -21,7 +21,8 @@ import { describeError, plaid, plaidError } from "@/lib/plaid";
 
 export type SyncCounts = { added: number; modified: number; removed: number };
 
-const PFC_VERSION = PersonalFinanceCategoryVersion.V1; // category-map.ts uses the v1 taxonomy
+// Clients enabled after Dec 3, 2025 can only request v2. v2 is a superset of v1, so category-map.ts keys still match.
+const PFC_VERSION = PersonalFinanceCategoryVersion.V2;
 const MAX_PAGINATION_RESTARTS = 3;
 const INSERT_CHUNK = 500;
 

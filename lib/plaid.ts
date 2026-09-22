@@ -8,17 +8,24 @@ let client: PlaidApi | undefined;
 
 export function plaid(): PlaidApi {
   if (client) return client;
-  const env = process.env.PLAID_ENV ?? "sandbox";
+  // Trim: values pasted into Vercel often carry a trailing newline or space,
+  // which Plaid rejects as INVALID_API_KEYS.
+  const env = (process.env.PLAID_ENV ?? "sandbox").trim();
   if (env !== "sandbox" && env !== "production") {
     throw new Error(`PLAID_ENV must be "sandbox" or "production", got "${env}"`);
+  }
+  const clientId = process.env.PLAID_CLIENT_ID?.trim();
+  const secret = process.env.PLAID_SECRET?.trim();
+  if (!clientId || !secret) {
+    throw new Error("PLAID_CLIENT_ID and PLAID_SECRET must be set");
   }
   client = new PlaidApi(
     new Configuration({
       basePath: PlaidEnvironments[env],
       baseOptions: {
         headers: {
-          "PLAID-CLIENT-ID": process.env.PLAID_CLIENT_ID,
-          "PLAID-SECRET": process.env.PLAID_SECRET,
+          "PLAID-CLIENT-ID": clientId,
+          "PLAID-SECRET": secret,
         },
       },
     }),
