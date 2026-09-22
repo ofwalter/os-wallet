@@ -1,1 +1,4 @@
-{ "crons": [{ "path": "/api/cron/sync", "schedule": "0 13 * * *" }] }
+{
+  "framework": "nextjs",
+  "crons": [{ "path": "/api/cron/sync", "schedule": "0 13 * * *" }]
+}
