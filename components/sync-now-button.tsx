@@ -1,34 +1,58 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { RefreshCw } from "lucide-react";
+import { useTransition } from "react";
+import { toast } from "sonner";
 import { syncNow } from "@/app/actions";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 
-export function SyncNowButton() {
+export function SyncNowButton({
+  variant = "default",
+  className,
+}: {
+  variant?: "default" | "icon";
+  className?: string;
+}) {
   const [pending, startTransition] = useTransition();
-  const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
+
+  const run = () =>
+    startTransition(async () => {
+      const id = toast.loading("Syncing with your banks…");
+      const res = await syncNow();
+      if (res.ok) toast.success("Sync complete", { id, description: res.summary });
+      else toast.error("Sync failed", { id, description: res.error });
+    });
+
+  const icon = <RefreshCw className={cn(pending && "animate-spin")} />;
+
+  if (variant === "icon") {
+    return (
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Sync now"
+              disabled={pending}
+              onClick={run}
+              className={className}
+            />
+          }
+        >
+          {icon}
+        </TooltipTrigger>
+        <TooltipContent>Sync now</TooltipContent>
+      </Tooltip>
+    );
+  }
 
   return (
-    <div className="space-y-1">
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={pending}
-        onClick={() =>
-          startTransition(async () => {
-            setMessage(null);
-            const res = await syncNow();
-            setMessage(res.ok ? { text: res.summary, error: false } : { text: res.error, error: true });
-          })
-        }
-      >
-        {pending ? "Syncing…" : "Sync now"}
-      </Button>
-      {message && (
-        <p className={message.error ? "text-xs text-destructive" : "text-xs text-muted-foreground"}>
-          {message.text}
-        </p>
-      )}
-    </div>
+    <Button variant="outline" disabled={pending} onClick={run} className={className}>
+      {icon}
+      {pending ? "Syncing…" : "Sync now"}
+    </Button>
   );
 }

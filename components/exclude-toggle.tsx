@@ -1,26 +1,61 @@
 "use client";
 
+import { Eye, EyeOff, MoreHorizontal, Search } from "lucide-react";
+import Link from "next/link";
 import { useOptimistic, useTransition } from "react";
+import { toast } from "sonner";
 import { setExcluded } from "@/app/actions";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
-export function ExcludeToggle({ transactionId, excluded }: { transactionId: number; excluded: boolean }) {
-  const [pending, startTransition] = useTransition();
-  const [checked, setChecked] = useOptimistic(excluded);
+/** Per-row "…" menu: exclude/include in totals, and jump to the merchant's history. */
+export function TransactionActions({
+  transactionId,
+  excluded,
+  merchant,
+}: {
+  transactionId: number;
+  excluded: boolean;
+  merchant: string;
+}) {
+  const [, startTransition] = useTransition();
+  const [isExcluded, setOptimistic] = useOptimistic(excluded);
+
+  const toggle = () =>
+    startTransition(async () => {
+      const next = !isExcluded;
+      setOptimistic(next);
+      const res = await setExcluded(transactionId, next);
+      if (res.ok) toast(next ? "Excluded from totals" : "Included in totals");
+      else toast.error("Couldn't update transaction");
+    });
+
   return (
-    <input
-      type="checkbox"
-      aria-label="Exclude from totals"
-      title="Exclude from totals"
-      className="size-4 accent-primary"
-      checked={checked}
-      disabled={pending}
-      onChange={(e) => {
-        const next = e.target.checked;
-        startTransition(async () => {
-          setChecked(next);
-          await setExcluded(transactionId, next);
-        });
-      }}
-    />
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button size="icon-sm" variant="ghost" aria-label="Transaction actions" className="text-muted-foreground" />
+        }
+      >
+        <MoreHorizontal />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56">
+        <DropdownMenuItem onClick={toggle}>
+          {isExcluded ? <Eye /> : <EyeOff />}
+          {isExcluded ? "Include in totals" : "Exclude from totals"}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem render={<Link href={`/transactions?q=${encodeURIComponent(merchant)}`} />}>
+          <Search />
+          <span className="truncate">All from {merchant}</span>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

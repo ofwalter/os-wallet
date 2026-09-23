@@ -224,12 +224,17 @@ export async function updateCategory(
 export async function moveCategory(id: number, direction: "up" | "down"): Promise<Result> {
   await requireAuth();
   const all = await db
-    .select({ id: categories.id })
+    .select({ id: categories.id, kind: categories.kind })
     .from(categories)
     .orderBy(asc(categories.sortOrder), asc(categories.name));
   const i = all.findIndex((c) => c.id === id);
-  const j = direction === "up" ? i - 1 : i + 1;
-  if (i < 0 || j < 0 || j >= all.length) return { ok: true };
+  if (i < 0) return { ok: true };
+  // The settings page lists categories grouped by kind, so swap with the
+  // nearest neighbor of the same kind.
+  const step = direction === "up" ? -1 : 1;
+  let j = i + step;
+  while (j >= 0 && j < all.length && all[j].kind !== all[i].kind) j += step;
+  if (j < 0 || j >= all.length) return { ok: true };
   [all[i], all[j]] = [all[j], all[i]];
   // Renumber everything so sort_order stays dense.
   const [first, ...rest] = all.map((c, index) =>

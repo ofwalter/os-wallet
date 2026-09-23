@@ -1,5 +1,6 @@
 "use client";
 
+import { Plus, RefreshCw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -7,20 +8,20 @@ import {
   type PlaidLinkOnEvent,
   type PlaidLinkOnSuccess,
 } from "react-plaid-link";
+import { toast } from "sonner";
 import { markReconnected } from "@/app/actions";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
-type Props =
+type Props = { className?: string } & (
   | { mode: "new"; linkedInstitutionIds: string[]; disabled?: boolean }
-  | { mode: "update"; itemId: number };
-
-type Message = { text: string; error: boolean };
+  | { mode: "update"; itemId: number }
+);
 
 export function PlaidLinkButton(props: Props) {
   const router = useRouter();
   const [token, setToken] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<Message | null>(null);
   const exitRef = useRef<(() => void) | null>(null);
 
   const itemId = props.mode === "update" ? props.itemId : undefined;
@@ -33,10 +34,12 @@ export function PlaidLinkButton(props: Props) {
       setBusy(true);
       try {
         if (itemId !== undefined) {
+          const id = toast.loading("Reconnecting and syncing…");
           const res = await markReconnected(itemId);
-          setMessage(res.ok ? { text: "Reconnected.", error: false } : { text: res.error, error: true });
+          if (res.ok) toast.success("Reconnected", { id });
+          else toast.error("Reconnect issue", { id, description: res.error });
         } else {
-          setMessage({ text: "Linking and pulling transactions…", error: false });
+          const id = toast.loading("Linking and pulling transactions…");
           const res = await fetch("/api/plaid/exchange", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -46,14 +49,15 @@ export function PlaidLinkButton(props: Props) {
             }),
           });
           const body = await res.json();
-          if (!res.ok) setMessage({ text: body.error ?? "Linking failed", error: true });
+          if (!res.ok) toast.error("Linking failed", { id, description: body.error ?? "Unknown error" });
           else
-            setMessage({
-              text:
-                `Linked ${body.institutionName ?? "bank"}: ${body.added} transactions so far.` +
+            toast.success(`Linked ${body.institutionName ?? "bank"}`, {
+              id,
+              duration: 10000,
+              description:
+                `${body.added} transactions so far.` +
                 (body.added < 10 ? " History can take a while to arrive; the daily sync picks up the rest." : "") +
-                (body.syncError ? ` (Initial sync: ${body.syncError})` : ""),
-              error: false,
+                (body.syncError ? ` Initial sync: ${body.syncError}` : ""),
             });
         }
       } finally {
@@ -72,9 +76,9 @@ export function PlaidLinkButton(props: Props) {
         metadata.institution_id &&
         linkedKey.split("|").includes(metadata.institution_id)
       ) {
-        setMessage({
-          text: `${metadata.institution_name ?? "That bank"} is already linked. Use Reconnect on it instead of linking again.`,
-          error: true,
+        toast.warning(`${metadata.institution_name ?? "That bank"} is already linked`, {
+          description: "Use Reconnect on it instead of linking again — a duplicate would use another connection slot.",
+          duration: 10000,
         });
         exitRef.current?.();
       }
@@ -98,7 +102,6 @@ export function PlaidLinkButton(props: Props) {
 
   async function start() {
     setBusy(true);
-    setMessage(null);
     try {
       const res = await fetch("/api/plaid/link-token", {
         method: "POST",
@@ -106,7 +109,7 @@ export function PlaidLinkButton(props: Props) {
         body: JSON.stringify(itemId !== undefined ? { itemId } : {}),
       });
       const body = await res.json();
-      if (!res.ok) setMessage({ text: body.error ?? "Could not start Plaid Link", error: true });
+      if (!res.ok) toast.error("Could not start Plaid Link", { description: body.error });
       else setToken(body.link_token);
     } finally {
       setBusy(false);
@@ -114,21 +117,15 @@ export function PlaidLinkButton(props: Props) {
   }
 
   const disabled = busy || !!token || (props.mode === "new" && props.disabled);
-  return (
-    <div className="space-y-1">
-      <Button
-        size="sm"
-        variant={props.mode === "new" ? "default" : "outline"}
-        disabled={disabled}
-        onClick={start}
-      >
-        {busy ? "Working…" : props.mode === "new" ? "Link a bank" : "Reconnect"}
-      </Button>
-      {message && (
-        <p className={message.error ? "text-xs text-destructive" : "text-xs text-muted-foreground"}>
-          {message.text}
-        </p>
-      )}
-    </div>
+  return props.mode === "new" ? (
+    <Button disabled={disabled} onClick={start} className={cn("bg-brand text-brand-foreground hover:bg-brand/90", props.className)}>
+      <Plus />
+      {busy ? "Opening…" : "Link a bank"}
+    </Button>
+  ) : (
+    <Button size="sm" variant="outline" disabled={disabled} onClick={start} className={props.className}>
+      <RefreshCw className={cn(busy && "animate-spin")} />
+      {busy ? "Working…" : "Reconnect"}
+    </Button>
   );
 }

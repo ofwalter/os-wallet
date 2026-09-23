@@ -1,9 +1,11 @@
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { logout } from "@/app/login/actions";
-import { Button } from "@/components/ui/button";
-import { NavLinks } from "@/components/nav-links";
+import { MobileHeader, SidebarFooter, type SyncStatus } from "@/components/app-chrome";
+import { Logo } from "@/components/logo";
+import { MobileTabBar, SidebarNav } from "@/components/nav-links";
+import { formatRelative } from "@/lib/format";
+import { lastSyncRun, reviewCount } from "@/lib/queries";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/session";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -11,22 +13,31 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // render per request, so financial data is never prerendered at build time.
   if (!verifySessionToken((await cookies()).get(SESSION_COOKIE)?.value)) redirect("/login");
 
+  const [toReview, lastRun] = await Promise.all([reviewCount(), lastSyncRun()]);
+  const sync: SyncStatus = lastRun
+    ? { status: lastRun.status, relative: formatRelative(lastRun.finishedAt ?? lastRun.startedAt) }
+    : { status: "never", relative: null };
+
   return (
-    <>
-      <header className="border-b">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
-          <Link href="/" className="font-semibold">
-            OS Wallet
-          </Link>
-          <NavLinks />
-          <form action={logout} className="ml-auto">
-            <Button variant="ghost" size="sm" type="submit">
-              Log out
-            </Button>
-          </form>
+    <div className="flex min-h-dvh flex-1">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r bg-sidebar px-4 py-5 lg:flex">
+        <Link href="/" className="mb-8 px-2" aria-label="OS Wallet home">
+          <Logo />
+        </Link>
+        <SidebarNav reviewCount={toReview} />
+        <div className="mt-auto">
+          <SidebarFooter sync={sync} />
         </div>
-      </header>
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">{children}</main>
-    </>
+      </aside>
+
+      <div className="flex min-w-0 flex-1 flex-col lg:pl-64">
+        <MobileHeader sync={sync} />
+        <main className="mx-auto w-full max-w-6xl flex-1 px-4 pt-5 pb-28 sm:px-6 lg:px-10 lg:pt-9 lg:pb-14">
+          {children}
+        </main>
+      </div>
+
+      <MobileTabBar reviewCount={toReview} />
+    </div>
   );
 }

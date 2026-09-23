@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="2" y1="1" x2="30" y2="31" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7C6BFF"/>
+      <stop offset="0.55" stop-color="#5B4FF0"/>
+      <stop offset="1" stop-color="#3A2FB8"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(24 6) rotate(135) scale(22)">
+      <stop stop-color="#E8B8FF" stop-opacity="0.75"/>
+      <stop offset="1" stop-color="#E8B8FF" stop-opacity="0"/>
+    </radialGradient>
+    <mask id="cut" maskUnits="userSpaceOnUse" x="0" y="0" width="32" height="32">
+      <rect width="32" height="32" fill="#fff"/>
+      <circle cx="22.5" cy="9.5" r="5.4" fill="#000"/>
+    </mask>
+  </defs>
+  <rect width="32" height="32" rx="9" fill="url(#bg)"/>
+  <rect width="32" height="32" rx="9" fill="url(#glow)"/>
+  <rect x="0.5" y="0.5" width="31" height="31" rx="8.5" stroke="#fff" stroke-opacity="0.18"/>
+  <circle cx="14.5" cy="17.5" r="7" stroke="#fff" stroke-width="3.4" mask="url(#cut)"/>
+  <path d="M22.5 5.2c.33 2.55 1.2 3.42 3.75 3.75-2.55.33-3.42 1.2-3.75 3.75-.33-2.55-1.2-3.42-3.75-3.75 2.55-.33 3.42-1.2 3.75-3.75Z" fill="#fff"/>
+</svg>

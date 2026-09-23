@@ -1,24 +1,54 @@
 "use client";
 
+import { ChevronDown } from "lucide-react";
 import { useState, useTransition } from "react";
+import { toast } from "sonner";
 import { createRule, recategorize, type RuleSuggestion } from "@/app/actions";
-import { Button } from "@/components/ui/button";
+import { ColorDot } from "@/components/category-icon";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
-export type CategoryOption = { id: number; name: string };
+export type CategoryOption = { id: number; name: string; color: string };
 
-export const selectClass =
-  "h-8 rounded-lg border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50";
+/** Offers "Always use X for Y?" as a toast action after a manual change. */
+export function offerRule(suggestion: RuleSuggestion) {
+  toast.success(`Categorized as ${suggestion.categoryName}`, {
+    description: `Always use ${suggestion.categoryName} for “${suggestion.pattern}”?`,
+    duration: 9000,
+    action: {
+      label: "Always",
+      onClick: async () => {
+        const res = await createRule(suggestion);
+        if (res.ok)
+          toast.success("Rule created", {
+            description:
+              res.applied > 0
+                ? `Applied to ${res.applied} other transaction${res.applied === 1 ? "" : "s"}.`
+                : `Future “${suggestion.pattern}” transactions will use ${suggestion.categoryName}.`,
+          });
+        else toast.error("Couldn't create rule", { description: res.error });
+      },
+    },
+  });
+}
 
-/** Inline category dropdown. After a change, offers "Always use X for Y?". */
+/** Inline category pill. After a change, offers "Always use X for Y?". */
 export function CategorySelect({
   transactionId,
   categoryId,
   categories,
+  className,
 }: {
   transactionId: number;
   categoryId: number | null;
   categories: CategoryOption[];
+  className?: string;
 }) {
   const [value, setValue] = useState(categoryId);
   // Follow server updates (e.g. a merchant rule recategorized this row).
@@ -27,73 +57,55 @@ export function CategorySelect({
     setLastProp(categoryId);
     setValue(categoryId);
   }
-  const [suggestion, setSuggestion] = useState<RuleSuggestion | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const byId = new Map(categories.map((c) => [c.id, c]));
 
   return (
-    <div className="space-y-1">
-      <select
+    <Select<number>
+      value={value}
+      onValueChange={(next) => {
+        if (next === null || next === value) return;
+        const previous = value;
+        setValue(next);
+        startTransition(async () => {
+          const res = await recategorize(transactionId, next);
+          if (!res.ok) {
+            setValue(previous);
+            toast.error("Couldn't recategorize", { description: res.error });
+          } else if (res.suggestion) offerRule(res.suggestion);
+        });
+      }}
+      disabled={pending}
+    >
+      <SelectTrigger
+        size="sm"
         aria-label="Category"
-        className={cn(selectClass, "w-40")}
-        value={value ?? ""}
-        disabled={pending}
-        onChange={(e) => {
-          const next = Number(e.target.value);
-          setValue(next);
-          startTransition(async () => {
-            const res = await recategorize(transactionId, next);
-            if (res.ok) {
-              setSuggestion(res.suggestion);
-              setError(null);
-            } else setError(res.error);
-          });
-        }}
+        className={cn(
+          "h-7 max-w-full gap-1.5 rounded-full border-transparent bg-muted/70 px-2.5 text-xs font-medium hover:bg-muted dark:bg-muted/60 [&>svg:last-child]:hidden",
+          className,
+        )}
       >
-        {value === null && <option value="">Uncategorized</option>}
+        <SelectValue>
+          {(v: number | null) => {
+            const c = v === null ? undefined : byId.get(v);
+            return (
+              <span className="flex min-w-0 items-center gap-1.5">
+                <ColorDot color={c?.color ?? "var(--muted-foreground)"} />
+                <span className="truncate">{c?.name ?? "Uncategorized"}</span>
+                <ChevronDown className="size-3 shrink-0 opacity-50" />
+              </span>
+            );
+          }}
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent alignItemWithTrigger={false} className="max-h-80 min-w-48">
         {categories.map((c) => (
-          <option key={c.id} value={c.id}>
+          <SelectItem key={c.id} value={c.id} className="text-sm">
+            <ColorDot color={c.color} />
             {c.name}
-          </option>
+          </SelectItem>
         ))}
-      </select>
-      {suggestion && (
-        <RulePrompt suggestion={suggestion} onDone={() => setSuggestion(null)} />
-      )}
-      {error && <p className="text-xs text-destructive">{error}</p>}
-    </div>
-  );
-}
-
-export function RulePrompt({
-  suggestion,
-  onDone,
-}: {
-  suggestion: RuleSuggestion;
-  onDone: () => void;
-}) {
-  const [pending, startTransition] = useTransition();
-  return (
-    <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
-      <span>
-        Always use <strong className="text-foreground">{suggestion.categoryName}</strong> for{" "}
-        <strong className="text-foreground">{suggestion.pattern}</strong>?
-      </span>
-      <Button
-        size="xs"
-        disabled={pending}
-        onClick={() =>
-          startTransition(async () => {
-            await createRule(suggestion);
-            onDone();
-          })
-        }
-      >
-        Yes
-      </Button>
-      <Button size="xs" variant="ghost" disabled={pending} onClick={onDone}>
-        No
-      </Button>
-    </div>
+      </SelectContent>
+    </Select>
   );
 }

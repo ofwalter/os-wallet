@@ -36,10 +36,59 @@ function withJoins<T extends PgSelect>(qb: T) {
 }
 
 export async function spendingBetween(from: string, to: string): Promise<number> {
+  return (await flowBetween(from, to)).spending;
+}
+
+/** Counted spending and income in a date range. */
+export async function flowBetween(from: string, to: string): Promise<{ spending: number; income: number }> {
   const [row] = await withJoins(
-    db.select({ spending: spendingExpr }).from(transactions).$dynamic(),
+    db.select({ spending: spendingExpr, income: incomeExpr }).from(transactions).$dynamic(),
   ).where(counted(from, to));
-  return row?.spending ?? 0;
+  return { spending: row?.spending ?? 0, income: row?.income ?? 0 };
+}
+
+export type CategoryMonthSpend = CategorySpend & { month: string };
+
+/** Spending per expense category per month ("YYYY-MM"), for client-side period filters. */
+export async function spendingByCategoryMonth(from: string, to: string): Promise<CategoryMonthSpend[]> {
+  const month = sql<string>`to_char(${transactions.date}, 'YYYY-MM')`;
+  const rows = await withJoins(
+    db
+      .select({
+        month,
+        id: categories.id,
+        name: sql<string>`coalesce(${categories.name}, 'Uncategorized')`,
+        color: sql<string>`coalesce(${categories.color}, '#94a3b8')`,
+        total: sql<number>`sum(${transactions.amount})::float8`,
+      })
+      .from(transactions)
+      .$dynamic(),
+  )
+    .where(counted(from, to, isExpense))
+    .groupBy(month, categories.id, categories.name, categories.color);
+  return rows;
+}
+
+/** Newest transactions for the overview feed (hidden accounts left out). */
+export async function recentTransactions(limit: number) {
+  return db
+    .select({
+      id: transactions.id,
+      date: transactions.date,
+      amount: transactions.amount,
+      merchantName: transactions.merchantName,
+      name: transactions.name,
+      pending: transactions.pending,
+      categoryName: categories.name,
+      categoryColor: categories.color,
+      accountName: accounts.name,
+    })
+    .from(transactions)
+    .innerJoin(accounts, eq(transactions.accountId, accounts.id))
+    .leftJoin(categories, eq(transactions.categoryId, categories.id))
+    .where(eq(accounts.hidden, false))
+    .orderBy(desc(transactions.date), desc(transactions.id))
+    .limit(limit);
 }
 
 export type CategorySpend = { id: number | null; name: string; color: string; total: number };
@@ -91,6 +140,7 @@ export async function visibleAccountBalances() {
       type: accounts.type,
       subtype: accounts.subtype,
       currentBalance: accounts.currentBalance,
+      creditLimit: accounts.creditLimit,
       institutionName: plaidItems.institutionName,
     })
     .from(accounts)

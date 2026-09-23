@@ -1,36 +1,23 @@
 import { connection } from "next/server";
 import { and, asc, count, desc, eq, gte, isNull, lte, sql, type SQL } from "drizzle-orm";
+import { ChevronLeft, ChevronRight, SearchX } from "lucide-react";
 import Link from "next/link";
-import { CategorySelect, selectClass } from "@/components/category-select";
-import { ExcludeToggle } from "@/components/exclude-toggle";
-import { Amount, SourceBadge } from "@/components/transaction-bits";
-import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { db, accounts, transactions } from "@/lib/db";
-import { formatDate } from "@/lib/format";
+import { CategoryIcon } from "@/components/category-icon";
+import { CategorySelect } from "@/components/category-select";
+import { TransactionActions } from "@/components/exclude-toggle";
+import { EmptyState, PageHeader } from "@/components/page-header";
+import { TransactionFilters, type TxFilters } from "@/components/transaction-filters";
+import { Amount, SourceBadge, StatusChip } from "@/components/transaction-bits";
+import { buttonVariants } from "@/components/ui/button";
+import { db, accounts, categories, transactions } from "@/lib/db";
+import { todayISO } from "@/lib/dates";
+import { formatDayHeading, formatMoney } from "@/lib/format";
 import { listCategories } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 
-const PAGE_SIZE = 50;
+export const metadata = { title: "Transactions" };
 
-type Filters = {
-  from?: string;
-  to?: string;
-  account?: string;
-  category?: string;
-  q?: string;
-  review?: string;
-  page?: string;
-};
+const PAGE_SIZE = 50;
 
 function str(v: string | string[] | undefined): string | undefined {
   const s = Array.isArray(v) ? v[0] : v;
@@ -43,16 +30,15 @@ const isId = (s: string | undefined): s is string => !!s && /^\d+$/.test(s);
 export default async function TransactionsPage({ searchParams }: PageProps<"/transactions">) {
   await connection(); // always render per request
   const sp = await searchParams;
-  const f: Filters = {
+  const f: TxFilters = {
     from: str(sp.from),
     to: str(sp.to),
     account: str(sp.account),
     category: str(sp.category),
     q: str(sp.q),
     review: str(sp.review),
-    page: str(sp.page),
   };
-  const page = Math.max(1, Number(f.page) || 1);
+  const page = Math.max(1, Number(str(sp.page)) || 1);
 
   const where: SQL[] = [];
   if (isDate(f.from)) where.push(gte(transactions.date, f.from));
@@ -67,8 +53,10 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/tra
     );
   }
   const condition = where.length ? and(...where) : undefined;
+  // Summary sums skip pending and excluded rows, like the dashboard totals.
+  const counts = sql`not ${transactions.pending} and not ${transactions.excluded}`;
 
-  const [rows, [{ total }], cats, accts] = await Promise.all([
+  const [rows, [summary], cats, accts] = await Promise.all([
     db
       .select({
         id: transactions.id,
@@ -81,24 +69,36 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/tra
         needsReview: transactions.needsReview,
         categoryId: transactions.categoryId,
         categorySource: transactions.categorySource,
+        categoryName: categories.name,
+        categoryColor: categories.color,
         accountName: accounts.name,
         accountMask: accounts.mask,
       })
       .from(transactions)
       .innerJoin(accounts, eq(transactions.accountId, accounts.id))
+      .leftJoin(categories, eq(transactions.categoryId, categories.id))
       .where(condition)
       .orderBy(desc(transactions.date), desc(transactions.id))
       .limit(PAGE_SIZE)
       .offset((page - 1) * PAGE_SIZE),
-    db.select({ total: count() }).from(transactions).where(condition),
+    db
+      .select({
+        total: count(),
+        out: sql<number>`coalesce(sum(case when ${counts} and ${transactions.amount} > 0 then ${transactions.amount} end), 0)::float8`,
+        in: sql<number>`coalesce(sum(case when ${counts} and ${transactions.amount} < 0 then -${transactions.amount} end), 0)::float8`,
+      })
+      .from(transactions)
+      .where(condition),
     listCategories(),
     db
       .select({ id: accounts.id, name: accounts.name, mask: accounts.mask })
       .from(accounts)
       .orderBy(asc(accounts.name)),
   ]);
+  const total = summary.total;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const categoryOptions = cats.map((c) => ({ id: c.id, name: c.name }));
+  const categoryOptions = cats.map((c) => ({ id: c.id, name: c.name, color: c.color }));
+  const today = todayISO();
 
   const pageHref = (p: number) => {
     const params = new URLSearchParams(
@@ -107,140 +107,186 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/tra
     return `/transactions?${params}`;
   };
 
+  // Group the page by day, newest first.
+  const days: { date: string; rows: typeof rows; net: number }[] = [];
+  for (const r of rows) {
+    const last = days.at(-1);
+    if (last?.date === r.date) last.rows.push(r);
+    else days.push({ date: r.date, rows: [r], net: 0 });
+  }
+  for (const d of days) d.net = d.rows.reduce((s, r) => s + (r.pending || r.excluded ? 0 : r.amount), 0);
+
+  const firstRow = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const lastRow = Math.min(page * PAGE_SIZE, total);
+
   return (
-    <div className="space-y-4">
-      <h1 className="text-xl font-semibold">Transactions</h1>
+    <div>
+      <PageHeader
+        title="Transactions"
+        description={`${total.toLocaleString()} transaction${total === 1 ? "" : "s"}${f.q || f.category || f.account || f.from || f.to || f.review ? " match your filters" : ""}`}
+      />
 
-      <form className="flex flex-wrap items-end gap-2 text-sm" method="get">
-        <label className="space-y-1">
-          <span className="block text-xs text-muted-foreground">From</span>
-          <Input type="date" name="from" defaultValue={f.from} className="w-36" />
-        </label>
-        <label className="space-y-1">
-          <span className="block text-xs text-muted-foreground">To</span>
-          <Input type="date" name="to" defaultValue={f.to} className="w-36" />
-        </label>
-        <label className="space-y-1">
-          <span className="block text-xs text-muted-foreground">Account</span>
-          <select name="account" defaultValue={f.account ?? ""} className={cn(selectClass, "w-44")}>
-            <option value="">All accounts</option>
-            {accts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-                {a.mask ? ` ••${a.mask}` : ""}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="space-y-1">
-          <span className="block text-xs text-muted-foreground">Category</span>
-          <select name="category" defaultValue={f.category ?? ""} className={cn(selectClass, "w-40")}>
-            <option value="">All categories</option>
-            <option value="none">Uncategorized</option>
-            {cats.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="space-y-1">
-          <span className="block text-xs text-muted-foreground">Search</span>
-          <Input name="q" defaultValue={f.q} placeholder="Merchant or description" className="w-52" />
-        </label>
-        <label className="flex h-8 items-center gap-2">
-          <input
-            type="checkbox"
-            name="review"
-            value="1"
-            defaultChecked={f.review === "1"}
-            className="size-4 accent-primary"
-          />
-          Needs review
-        </label>
-        <Button type="submit" size="sm">
-          Filter
-        </Button>
-        <Link href="/transactions" className={buttonVariants({ size: "sm", variant: "ghost" })}>
-          Clear
-        </Link>
-      </form>
+      <TransactionFilters filters={f} today={today} accounts={accts} categories={categoryOptions} />
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Date</TableHead>
-            <TableHead>Merchant</TableHead>
-            <TableHead className="text-right">Amount</TableHead>
-            <TableHead>Account</TableHead>
-            <TableHead>Category</TableHead>
-            <TableHead>Source</TableHead>
-            <TableHead title="Exclude from totals">Excl.</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.length === 0 && (
-            <TableRow>
-              <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
-                No transactions match.
-              </TableCell>
-            </TableRow>
-          )}
-          {rows.map((t) => (
-            <TableRow key={t.id} className={t.excluded ? "opacity-60" : undefined}>
-              <TableCell className="whitespace-nowrap">{formatDate(t.date)}</TableCell>
-              <TableCell className="max-w-64">
-                <div className="flex items-center gap-2">
-                  <span className="truncate">{t.merchantName ?? t.name}</span>
-                  {t.pending && <Badge variant="outline">Pending</Badge>}
-                  {t.needsReview && <Badge variant="secondary">Review</Badge>}
-                </div>
-                {t.merchantName && t.merchantName !== t.name && (
-                  <div className="truncate text-xs text-muted-foreground">{t.name}</div>
-                )}
-              </TableCell>
-              <TableCell className="text-right">
-                <Amount amount={t.amount} />
-              </TableCell>
-              <TableCell className="whitespace-nowrap text-muted-foreground">
-                {t.accountName}
-                {t.accountMask && ` ••${t.accountMask}`}
-              </TableCell>
-              <TableCell>
-                <CategorySelect
-                  transactionId={t.id}
-                  categoryId={t.categoryId}
-                  categories={categoryOptions}
-                />
-              </TableCell>
-              <TableCell>
-                <SourceBadge source={t.categorySource} />
-              </TableCell>
-              <TableCell>
-                <ExcludeToggle transactionId={t.id} excluded={t.excluded} />
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-
-      <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <span>
-          {total.toLocaleString()} transactions · page {page} of {pages}
-        </span>
-        <div className="flex gap-2">
-          {page > 1 && (
-            <Link href={pageHref(page - 1)} className={buttonVariants({ size: "sm", variant: "outline" })}>
-              Previous
-            </Link>
-          )}
-          {page < pages && (
-            <Link href={pageHref(page + 1)} className={buttonVariants({ size: "sm", variant: "outline" })}>
-              Next
-            </Link>
-          )}
-        </div>
+      <div className="mt-4 grid grid-cols-3 gap-3 sm:max-w-lg">
+        <Stat label="Money out" value={formatMoney(summary.out)} />
+        <Stat label="Money in" value={`+${formatMoney(summary.in)}`} className="text-positive" />
+        <Stat
+          label="Net"
+          value={`${summary.in - summary.out >= 0 ? "+" : "−"}${formatMoney(Math.abs(summary.in - summary.out))}`}
+        />
       </div>
+
+      <div className="surface mt-4 overflow-clip">
+        {rows.length === 0 ? (
+          <EmptyState
+            icon={SearchX}
+            title="No transactions match"
+            description="Try a different search, or clear your filters."
+            action={
+              <Link href="/transactions" className={buttonVariants({ variant: "outline", size: "sm" })}>
+                Clear filters
+              </Link>
+            }
+          />
+        ) : (
+          <>
+            {/* Column headings (desktop) */}
+            <div className="hidden grid-cols-[minmax(0,1fr)_11rem_10rem_7.5rem_2.25rem] items-center gap-4 border-b bg-muted/40 px-5 py-2.5 text-[0.6875rem] font-medium tracking-wide text-muted-foreground uppercase md:grid">
+              <span>Merchant</span>
+              <span>Category</span>
+              <span>Account</span>
+              <span className="text-right">Amount</span>
+              <span />
+            </div>
+            {days.map((d) => (
+              <section key={d.date}>
+                <div className="sticky top-14 z-10 flex items-center justify-between border-b bg-card/95 px-4 py-2 backdrop-blur md:px-5 lg:top-0">
+                  <h2 className="font-sans text-xs font-semibold tracking-normal text-foreground">
+                    {formatDayHeading(d.date, today)}
+                  </h2>
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    {d.net > 0 ? formatMoney(d.net) : d.net < 0 ? `+${formatMoney(-d.net)}` : ""}
+                  </span>
+                </div>
+                <ul className="divide-y">
+                  {d.rows.map((t) => {
+                    const merchant = t.merchantName ?? t.name;
+                    return (
+                      <li
+                        key={t.id}
+                        className={cn(
+                          "grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 px-4 py-3 transition-colors hover:bg-muted/40 md:grid-cols-[minmax(0,1fr)_11rem_10rem_7.5rem_2.25rem] md:gap-4 md:px-5",
+                          t.excluded && "opacity-55",
+                        )}
+                      >
+                        <div className="contents md:flex md:min-w-0 md:items-center md:gap-3">
+                          <CategoryIcon name={t.categoryName ?? "Uncategorized"} color={t.categoryColor} />
+                          <div className="min-w-0">
+                            <div className="flex min-w-0 items-center gap-1.5">
+                              <span className="truncate text-sm font-medium">{merchant}</span>
+                              {t.pending && <StatusChip>Pending</StatusChip>}
+                              {t.needsReview && <StatusChip tone="warning">Review</StatusChip>}
+                              {t.excluded && <StatusChip>Excluded</StatusChip>}
+                            </div>
+                            <p className="truncate text-xs text-muted-foreground">
+                              <span className="md:hidden">
+                                {t.accountName}
+                                {t.accountMask && ` ••${t.accountMask}`}
+                                {t.merchantName && t.merchantName !== t.name && " · "}
+                              </span>
+                              {t.merchantName && t.merchantName !== t.name && t.name}
+                            </p>
+                          </div>
+                        </div>
+
+                        <Amount amount={t.amount} className="justify-self-end text-sm md:order-4" />
+
+                        <div className="col-span-3 flex min-w-0 items-center gap-2 pl-12 md:order-2 md:col-span-1 md:pl-0">
+                          <CategorySelect
+                            transactionId={t.id}
+                            categoryId={t.categoryId}
+                            categories={categoryOptions}
+                            className="min-w-0"
+                          />
+                          <SourceBadge source={t.categorySource} className="md:hidden" />
+                          <span className="ml-auto md:hidden">
+                            <TransactionActions transactionId={t.id} excluded={t.excluded} merchant={merchant} />
+                          </span>
+                        </div>
+
+                        <div className="hidden min-w-0 text-sm text-muted-foreground md:order-3 md:block">
+                          <p className="truncate">{t.accountName}</p>
+                          <p className="flex items-center gap-1.5 text-xs">
+                            {t.accountMask && <span className="font-mono">••{t.accountMask}</span>}
+                            <SourceBadge source={t.categorySource} />
+                          </p>
+                        </div>
+
+                        <div className="hidden md:order-5 md:block">
+                          <TransactionActions transactionId={t.id} excluded={t.excluded} merchant={merchant} />
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            ))}
+          </>
+        )}
+      </div>
+
+      {total > 0 && (
+        <div className="mt-4 flex items-center justify-between gap-4 text-sm text-muted-foreground">
+          <span className="tabular-nums">
+            {firstRow.toLocaleString()}–{lastRow.toLocaleString()} of {total.toLocaleString()}
+          </span>
+          <div className="flex items-center gap-2">
+            <span className="hidden text-xs sm:inline">
+              Page {page} of {pages}
+            </span>
+            <PageLink href={pageHref(page - 1)} disabled={page <= 1} label="Previous page">
+              <ChevronLeft />
+            </PageLink>
+            <PageLink href={pageHref(page + 1)} disabled={page >= pages} label="Next page">
+              <ChevronRight />
+            </PageLink>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+function Stat({ label, value, className }: { label: string; value: string; className?: string }) {
+  return (
+    <div className="surface px-3 py-2.5 sm:px-4">
+      <p className="text-[0.6875rem] font-medium text-muted-foreground">{label}</p>
+      <p className={cn("num mt-0.5 truncate text-sm font-semibold sm:text-base", className)}>{value}</p>
+    </div>
+  );
+}
+
+function PageLink({
+  href,
+  disabled,
+  label,
+  children,
+}: {
+  href: string;
+  disabled: boolean;
+  label: string;
+  children: React.ReactNode;
+}) {
+  if (disabled)
+    return (
+      <span aria-disabled className={cn(buttonVariants({ variant: "outline", size: "icon" }), "pointer-events-none opacity-40")}>
+        {children}
+      </span>
+    );
+  return (
+    <Link href={href} aria-label={label} className={buttonVariants({ variant: "outline", size: "icon" })}>
+      {children}
+    </Link>
   );
 }

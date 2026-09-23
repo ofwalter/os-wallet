@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { Trash2 } from "lucide-react";
+import { useOptimistic, useState, useTransition } from "react";
+import { toast } from "sonner";
 import { removeItem, setAccountHidden } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,28 +14,30 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
-export function HideAccountSwitch({ accountId, hidden }: { accountId: number; hidden: boolean }) {
-  const [pending, startTransition] = useTransition();
-  const id = `hide-${accountId}`;
+/** Checked = the account shows up in balances and totals. */
+export function VisibleAccountSwitch({ accountId, hidden, name }: { accountId: number; hidden: boolean; name: string }) {
+  const [, startTransition] = useTransition();
+  const [isHidden, setOptimistic] = useOptimistic(hidden);
   return (
-    <div className="flex items-center gap-2">
-      <Label htmlFor={id} className="text-xs text-muted-foreground">
-        Hidden
-      </Label>
-      <Switch
-        id={id}
-        checked={hidden}
-        disabled={pending}
-        onCheckedChange={(checked) =>
-          startTransition(async () => {
-            await setAccountHidden(accountId, checked);
-          })
-        }
-      />
-    </div>
+    <Tooltip>
+      <TooltipTrigger render={<span className="inline-flex" />}>
+        <Switch
+          aria-label={`Include ${name} in totals`}
+          checked={!isHidden}
+          onCheckedChange={(checked) =>
+            startTransition(async () => {
+              setOptimistic(!checked);
+              const res = await setAccountHidden(accountId, !checked);
+              if (!res.ok) toast.error("Couldn't update account");
+            })
+          }
+        />
+      </TooltipTrigger>
+      <TooltipContent>{isHidden ? "Hidden from totals" : "Included in totals"}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -44,9 +48,22 @@ export function RemoveItemButton({ itemId, name }: { itemId: number; name: strin
 
   return (
     <>
-      <Button size="sm" variant="destructive" onClick={() => setOpen(true)}>
-        Remove
-      </Button>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label={`Remove ${name}`}
+              onClick={() => setOpen(true)}
+              className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+            />
+          }
+        >
+          <Trash2 />
+        </TooltipTrigger>
+        <TooltipContent>Remove connection</TooltipContent>
+      </Tooltip>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
@@ -65,8 +82,10 @@ export function RemoveItemButton({ itemId, name }: { itemId: number; name: strin
               onClick={() =>
                 startTransition(async () => {
                   const res = await removeItem(itemId);
-                  if (res.ok) setOpen(false);
-                  else setError(res.error);
+                  if (res.ok) {
+                    setOpen(false);
+                    toast.success(`${name} removed`);
+                  } else setError(res.error);
                 })
               }
             >
