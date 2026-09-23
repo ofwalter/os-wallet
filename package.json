@@ -11,6 +11,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx scripts/seed.ts",
+    "db:recategorize": "tsx --conditions=react-server scripts/recategorize.ts",
     "db:studio": "drizzle-kit studio",
     "hash-password": "tsx scripts/hash-password.ts"
   },

@@ -106,6 +106,9 @@ export const merchantRules = pgTable("merchant_rules", {
   matchField: text("match_field", { enum: ["merchant_name", "name"] }).notNull(),
   // Case-insensitive "contains" match.
   pattern: text("pattern").notNull(),
+  // Optional inclusive bounds on the signed Plaid amount (positive = money out).
+  minAmount: money("min_amount"),
+  maxAmount: money("max_amount"),
   categoryId: integer("category_id")
     .notNull()
     .references(() => categories.id, { onDelete: "cascade" }),

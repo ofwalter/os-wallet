@@ -8,7 +8,8 @@ import { CategoryIcon } from "@/components/category-icon";
 import { Amount, StatusChip } from "@/components/transaction-bits";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { formatDate } from "@/lib/format";
+import { isPeerToPeer, peerAmountRange } from "@/lib/category-map";
+import { formatAmountRange, formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 type ReviewTx = {
@@ -48,7 +49,10 @@ function plaidLabel(primary: string | null, detailed: string | null): string | n
 
 export function ReviewItem({ tx, categories }: { tx: ReviewTx; categories: Option[] }) {
   const merchant = tx.merchantName ?? tx.name;
-  const [alwaysUse, setAlwaysUse] = useState(true);
+  // A payment to a person only gets a rule when I opt in, and then only for similar amounts.
+  const peer = isPeerToPeer(tx.plaidDetailed);
+  const range = peer ? peerAmountRange(tx.amount) : null;
+  const [alwaysUse, setAlwaysUse] = useState(!peer);
   const [filed, setFiled] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const plaid = plaidLabel(tx.plaidPrimary, tx.plaidDetailed);
@@ -171,6 +175,15 @@ export function ReviewItem({ tx, categories }: { tx: ReviewTx; categories: Optio
             <Switch checked={alwaysUse} onCheckedChange={setAlwaysUse} size="sm" />
             <span className="truncate">
               Always use for <span className="font-medium text-foreground">“{merchant}”</span>
+              {range && (
+                <>
+                  {" "}
+                  payments of{" "}
+                  <span className="num font-medium text-foreground">
+                    {formatAmountRange(range.minAmount, range.maxAmount)}
+                  </span>
+                </>
+              )}
             </span>
           </label>
           {tx.categoryId !== null && (

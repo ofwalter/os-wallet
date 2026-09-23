@@ -1,6 +1,6 @@
 "use server";
 
-import { and, asc, eq, ne, sql } from "drizzle-orm";
+import { and, asc, eq, gte, lte, ne, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireAuth } from "@/lib/auth";
@@ -14,6 +14,7 @@ import {
   transactions,
   type MerchantRule,
 } from "@/lib/db";
+import { isPeerToPeer, peerAmountRange } from "@/lib/category-map";
 import { describeError, plaid, plaidError } from "@/lib/plaid";
 import { runSync, syncItem } from "@/lib/sync";
 
@@ -88,6 +89,9 @@ export type RuleSuggestion = {
   pattern: string;
   categoryId: number;
   categoryName: string;
+  // Set for payments to people, where the name alone ("Venmo") says nothing.
+  minAmount?: number;
+  maxAmount?: number;
 };
 
 /** Manual recategorize. Returns the "Always use X for Y?" suggestion. */
@@ -100,7 +104,12 @@ export async function recategorize(
     .update(transactions)
     .set({ categoryId, categorySource: "manual", needsReview: false })
     .where(eq(transactions.id, transactionId))
-    .returning({ merchantName: transactions.merchantName, name: transactions.name });
+    .returning({
+      merchantName: transactions.merchantName,
+      name: transactions.name,
+      amount: transactions.amount,
+      plaidDetailed: transactions.plaidDetailed,
+    });
   if (!tx) return { ok: false, error: "Transaction not found" };
   const [cat] = await db
     .select({ name: categories.name })
@@ -109,9 +118,14 @@ export async function recategorize(
   refreshAll();
 
   const suggestion: RuleSuggestion | null = cat
-    ? tx.merchantName
-      ? { matchField: "merchant_name", pattern: tx.merchantName, categoryId, categoryName: cat.name }
-      : { matchField: "name", pattern: tx.name, categoryId, categoryName: cat.name }
+    ? {
+        ...(tx.merchantName
+          ? { matchField: "merchant_name" as const, pattern: tx.merchantName }
+          : { matchField: "name" as const, pattern: tx.name }),
+        categoryId,
+        categoryName: cat.name,
+        ...(isPeerToPeer(tx.plaidDetailed) ? peerAmountRange(tx.amount) : {}),
+      }
     : null;
   return { ok: true, suggestion };
 }
@@ -138,6 +152,8 @@ const RuleInput = z.object({
   matchField: z.enum(["merchant_name", "name"]),
   pattern: z.string().trim().min(1),
   categoryId: z.number().int(),
+  minAmount: z.number().finite().optional(),
+  maxAmount: z.number().finite().optional(),
 });
 
 /** Creates a merchant rule and applies it to existing non-manual transactions. */
@@ -146,17 +162,24 @@ export async function createRule(input: z.input<typeof RuleInput>): Promise<Resu
   const parsed = RuleInput.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Invalid rule" };
   const { matchField, pattern, categoryId } = parsed.data;
+  const minAmount = parsed.data.minAmount ?? null;
+  const maxAmount = parsed.data.maxAmount ?? null;
+  if (minAmount !== null && maxAmount !== null && minAmount > maxAmount) {
+    return { ok: false, error: "Invalid amount range" };
+  }
 
-  // Replace any existing rule for the same pattern rather than stacking duplicates.
+  // Replace any existing rule for the same pattern and range rather than stacking duplicates.
   await db
     .delete(merchantRules)
     .where(
       and(
         eq(merchantRules.matchField, matchField),
         sql`lower(${merchantRules.pattern}) = lower(${pattern})`,
+        sql`${merchantRules.minAmount} is not distinct from ${minAmount}::numeric`,
+        sql`${merchantRules.maxAmount} is not distinct from ${maxAmount}::numeric`,
       ),
     );
-  await db.insert(merchantRules).values({ matchField, pattern, categoryId });
+  await db.insert(merchantRules).values({ matchField, pattern, minAmount, maxAmount, categoryId });
 
   const column = matchField === "merchant_name" ? transactions.merchantName : transactions.name;
   const updated = await db
@@ -166,6 +189,8 @@ export async function createRule(input: z.input<typeof RuleInput>): Promise<Resu
       and(
         ne(transactions.categorySource, "manual"),
         sql`position(lower(${pattern}) in lower(${column})) > 0`,
+        minAmount === null ? undefined : gte(transactions.amount, minAmount),
+        maxAmount === null ? undefined : lte(transactions.amount, maxAmount),
       ),
     )
     .returning({ id: transactions.id });

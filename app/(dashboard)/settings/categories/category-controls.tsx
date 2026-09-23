@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { Category } from "@/lib/db/schema";
+import { formatAmountRange } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 type Kind = Category["kind"];
@@ -18,6 +19,8 @@ type Rule = {
   id: number;
   matchField: "merchant_name" | "name";
   pattern: string;
+  minAmount: number | null;
+  maxAmount: number | null;
   categoryName: string;
   categoryColor: string;
 };
@@ -297,6 +300,11 @@ function RulesList({ rules }: { rules: Rule[] }) {
                 <span className="max-w-full truncate rounded-md bg-muted px-1.5 py-0.5 font-mono text-xs font-medium">
                   {r.pattern}
                 </span>
+                {formatAmountRange(r.minAmount, r.maxAmount) && (
+                  <span className="text-xs text-muted-foreground">
+                    for <span className="num text-foreground">{formatAmountRange(r.minAmount, r.maxAmount)}</span>
+                  </span>
+                )}
                 <ArrowRight className="size-3.5 text-muted-foreground" />
                 <span className="inline-flex items-center gap-1.5 font-medium">
                   <span aria-hidden className="size-2 rounded-full" style={{ backgroundColor: r.categoryColor }} />

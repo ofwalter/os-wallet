@@ -16,6 +16,8 @@ export default async function CategoriesPage() {
         id: merchantRules.id,
         matchField: merchantRules.matchField,
         pattern: merchantRules.pattern,
+        minAmount: merchantRules.minAmount,
+        maxAmount: merchantRules.maxAmount,
         categoryName: categories.name,
         categoryColor: categories.color,
       })

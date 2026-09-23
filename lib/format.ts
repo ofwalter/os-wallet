@@ -19,6 +19,16 @@ export const formatMoneyWhole = (n: number) => usdWhole.format(n);
 export const formatMoneyCompact = (n: number) =>
   Math.abs(n) < 1000 ? usdWhole.format(n) : usdCompact.format(n);
 
+/** A rule's amount bounds (Plaid sign), e.g. "$1,498–$2,026", "≥ $50", or null when unbounded. */
+export function formatAmountRange(min: number | null | undefined, max: number | null | undefined) {
+  const lo = min ?? null;
+  const hi = max ?? null;
+  if (lo !== null && hi !== null) return `${usdWhole.format(lo)}–${usdWhole.format(hi)}`;
+  if (lo !== null) return `≥ ${usdWhole.format(lo)}`;
+  if (hi !== null) return `≤ ${usdWhole.format(hi)}`;
+  return null;
+}
+
 /** Splits $1,234.56 into ["$1,234", ".56"] so cents can be styled quieter. */
 export function splitMoney(n: number): [string, string] {
   const s = usd.format(n);

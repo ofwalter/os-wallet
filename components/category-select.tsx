@@ -12,14 +12,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { formatAmountRange } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export type CategoryOption = { id: number; name: string; color: string };
 
 /** Offers "Always use X for Y?" as a toast action after a manual change. */
 export function offerRule(suggestion: RuleSuggestion) {
+  const range = formatAmountRange(suggestion.minAmount, suggestion.maxAmount);
+  const target = range ? `“${suggestion.pattern}” payments of ${range}` : `“${suggestion.pattern}”`;
   toast.success(`Categorized as ${suggestion.categoryName}`, {
-    description: `Always use ${suggestion.categoryName} for “${suggestion.pattern}”?`,
+    description: `Always use ${suggestion.categoryName} for ${target}?`,
     duration: 9000,
     action: {
       label: "Always",
@@ -30,7 +33,7 @@ export function offerRule(suggestion: RuleSuggestion) {
             description:
               res.applied > 0
                 ? `Applied to ${res.applied} other transaction${res.applied === 1 ? "" : "s"}.`
-                : `Future “${suggestion.pattern}” transactions will use ${suggestion.categoryName}.`,
+                : `Future ${target} transactions will use ${suggestion.categoryName}.`,
           });
         else toast.error("Couldn't create rule", { description: res.error });
       },
