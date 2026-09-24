@@ -52,8 +52,12 @@ export async function generateWeeklyInsight({ force = false } = {}) {
     perDayLeft: r0(status.perDayLeft),
     projectedSavings: r0(status.projectedSavings),
     billsPaid: `${status.fixed.filter((f) => f.paid).length} of ${status.fixed.length}`,
-    underLimits: status.limits.filter((l) => l.spent <= l.limit).map((l) => `${l.label} ${r0(l.spent)}/${r0(l.limit)}`),
-    overLimits: status.limits.filter((l) => l.spent > l.limit).map((l) => `${l.label} ${r0(l.spent)}/${r0(l.limit)}`),
+    overGuideline: status.guidelines
+      .filter((g) => g.spent > g.amount)
+      .map((g) => `${g.name} ${r0(g.spent)}/${r0(g.amount)}`),
+    aheadOfPaceGuideline: status.guidelines
+      .filter((g) => g.spent <= g.amount && g.spent > (g.amount * status.day) / status.daysInMonth + 10)
+      .map((g) => `${g.name} ${r0(g.spent)}/${r0(g.amount)}`),
     lastWeekByCategory: thisWeekCats.slice(0, 6).map((c) => ({
       category: c.name,
       spent: r0(c.total),

@@ -193,7 +193,21 @@ export const budgetInsights = pgTable("budget_insights", {
   createdAt: createdAt(),
 });
 
-export type PlaidItem = typeof plaidItems.$inferSelect;
+/**
+ * AI tips for the category guidelines, keyed by a hash of the numbers they were
+ * written from. A new row only when the budget or month changes.
+ */
+export const budgetGuidance = pgTable("budget_guidance", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  inputHash: text("input_hash").notNull().unique(),
+  // { [categoryId]: tip }
+  tips: jsonb("tips").$type<Record<string, string>>().notNull(),
+  promptTokens: integer("prompt_tokens"),
+  completionTokens: integer("completion_tokens"),
+  createdAt: createdAt(),
+});
+
+export type PlaidItem =typeof plaidItems.$inferSelect;
 export type Account = typeof accounts.$inferSelect;
 export type Category = typeof categories.$inferSelect;
 export type Transaction = typeof transactions.$inferSelect;
@@ -204,3 +218,4 @@ export type AgentMessage = typeof agentMessages.$inferSelect;
 export type BudgetSettings = typeof budgetSettings.$inferSelect;
 export type BudgetItem = typeof budgetItems.$inferSelect;
 export type BudgetInsight = typeof budgetInsights.$inferSelect;
+export type BudgetGuidance = typeof budgetGuidance.$inferSelect;

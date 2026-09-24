@@ -1,6 +1,6 @@
 "use client";
 
-import { Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Pencil, Plus, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { deleteBudgetItem, regenerateInsight, saveBudgetSettings, upsertBudgetItem } from "@/app/actions";
@@ -108,7 +108,8 @@ export function EditAmountsButton({
 type CategoryOption = { id: number; name: string };
 
 export type EditableItem = {
-  id: number;
+  /** Null for a suggested guideline that isn't saved as a limit yet. */
+  id: number | null;
   kind: "fixed" | "limit";
   label: string;
   amount: number;
@@ -152,7 +153,7 @@ export function ItemDialog({
           matchField: item?.matchField ?? "merchant_name",
           pattern: kind === "fixed" ? pattern.trim() || null : null,
         }),
-      item ? "Saved" : "Added",
+      item?.id ? "Saved" : kind === "limit" ? `${name} limit set` : "Added",
       () => {
         setOpen(false);
         if (!item) {
@@ -172,14 +173,19 @@ export function ItemDialog({
           trigger === "add" ? (
             <Button variant="outline" size="sm" />
           ) : (
-            <Button variant="ghost" size="icon-sm" aria-label={`Edit ${item?.label}`} />
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={item?.id || kind === "fixed" ? `Edit ${item?.label}` : `Set your own amount for ${item?.label}`}
+              title={item?.id || kind === "fixed" ? undefined : "Set your own amount"}
+            />
           )
         }
       >
         {trigger === "add" ? (
           <>
             <Plus />
-            {kind === "fixed" ? "Add bill" : "Add limit"}
+            {kind === "fixed" ? "Add bill" : "Set a limit"}
           </>
         ) : (
           <Pencil />
@@ -188,12 +194,12 @@ export function ItemDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            {item ? "Edit" : "Add"} {kind === "fixed" ? "fixed bill" : "category limit"}
+            {kind === "fixed" ? `${item ? "Edit" : "Add"} fixed bill` : item ? `${item.label} limit` : "Set a category limit"}
           </DialogTitle>
           <DialogDescription>
             {kind === "fixed"
               ? "A cost that's about the same every month, like rent or a subscription."
-              : "A soft monthly cap. You'll see a bar fill up as you spend."}
+              : "Your own monthly amount for this category. It replaces the suggested guideline."}
           </DialogDescription>
         </DialogHeader>
         {kind === "fixed" ? (
@@ -233,7 +239,7 @@ export function ItemDialog({
         )}
         <DialogFooter>
           <Button disabled={pending} onClick={save}>
-            {item ? "Save" : "Add"}
+            {item?.id ? "Save" : kind === "limit" ? "Set limit" : "Add"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -241,18 +247,19 @@ export function ItemDialog({
   );
 }
 
-export function DeleteItemButton({ id, label }: { id: number; label: string }) {
+export function DeleteItemButton({ id, label, reset }: { id: number; label: string; reset?: boolean }) {
   const [pending, run] = useRun();
   return (
     <Button
       variant="ghost"
       size="icon-sm"
-      aria-label={`Remove ${label}`}
+      aria-label={reset ? `Use the suggested amount for ${label}` : `Remove ${label}`}
+      title={reset ? "Back to suggested" : undefined}
       disabled={pending}
-      onClick={() => run(() => deleteBudgetItem(id), `Removed ${label}`)}
+      onClick={() => run(() => deleteBudgetItem(id), reset ? `${label} back to suggested` : `Removed ${label}`)}
       className="text-muted-foreground"
     >
-      <Trash2 />
+      {reset ? <RotateCcw /> : <Trash2 />}
     </Button>
   );
 }

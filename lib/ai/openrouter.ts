@@ -32,6 +32,8 @@ export type ChatOptions = {
   maxTokens?: number;
   /** Reasoning tokens cost money; plain rewrites need none, tool picking needs a little. */
   reasoning?: "minimal" | "low" | "medium";
+  /** Ask for a JSON object back (the prompt must still describe its shape). */
+  json?: boolean;
 };
 
 export type ChatResult = { content: string; toolCalls: ToolCall[]; usage: Usage };
@@ -46,6 +48,7 @@ function body(opts: ChatOptions, stream: boolean) {
     tool_choice: opts.tools?.length ? (opts.toolChoice ?? "auto") : undefined,
     reasoning: { effort: opts.reasoning ?? "minimal" },
     max_tokens: opts.maxTokens ?? 1000,
+    response_format: opts.json ? { type: "json_object" } : undefined,
     stream,
     usage: { include: true },
   });

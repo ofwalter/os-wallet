@@ -363,6 +363,15 @@ export async function upsertBudgetItem(
   await requireAuth();
   const parsed = ItemInput.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Invalid item" };
+  // One limit per category: setting it again updates the existing one.
+  if (!id && parsed.data.kind === "limit" && parsed.data.categoryId) {
+    const [existing] = await db
+      .select({ id: budgetItems.id })
+      .from(budgetItems)
+      .where(and(eq(budgetItems.kind, "limit"), eq(budgetItems.categoryId, parsed.data.categoryId)))
+      .limit(1);
+    id = existing?.id ?? null;
+  }
   if (id) {
     await db.update(budgetItems).set(itemValues(parsed.data)).where(eq(budgetItems.id, id));
   } else {

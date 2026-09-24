@@ -192,18 +192,24 @@ const TOOLS = [
   ),
   tool(
     "budget_status",
-    "This month's budget: income, fixed bills (paid or due), savings goal, safe-to-spend, what's left, per-day allowance, category limits.",
+    "This month's budget: income, fixed bills (paid or due), savings goal, safe-to-spend, what's left, per-day allowance, and a monthly guideline per category (the user's own limit or a suggestion) with spending so far.",
     {},
     [],
     z.object({}),
     async () => {
       const b = await getBudgetStatus();
       if (!b) return { setUp: false, note: "No budget yet. The user can create one on the Budget page." };
-      const { newRecurring, fixed, limits, ...rest } = b;
+      const { newRecurring, fixed, guidelines, ...rest } = b;
       return {
         ...rest,
         fixed: fixed.map((f) => ({ label: f.label, amount: f.amount, paid: !!f.paid, due: f.dueDate })),
-        limits: limits.map((l) => ({ label: l.label, limit: l.limit, spent: l.spent })),
+        guidelines: guidelines.map((g) => ({
+          category: g.name,
+          monthly: g.amount,
+          spent: g.spent,
+          usual: g.usual,
+          ownLimit: g.source === "limit",
+        })),
         untrackedRecurring: newRecurring.length,
       };
     },

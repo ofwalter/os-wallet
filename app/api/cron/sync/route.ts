@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { guidanceTips } from "@/lib/ai/guidance";
 import { generateWeeklyInsight } from "@/lib/ai/insight";
+import { getBudgetStatus } from "@/lib/budget";
 import { safeEqual } from "@/lib/session";
 import { runSync } from "@/lib/sync";
 
@@ -20,6 +22,15 @@ export async function GET(request: Request) {
     await generateWeeklyInsight();
   } catch (err) {
     console.error("weekly insight failed:", err instanceof Error ? err.message : err);
+  }
+
+  // Warm the category tips so the Budget page doesn't wait on them. A cache hit
+  // (same budget, same month) makes no AI call.
+  try {
+    const status = await getBudgetStatus();
+    if (status) await guidanceTips(status);
+  } catch (err) {
+    console.error("guidance warmup failed:", err instanceof Error ? err.message : err);
   }
 
   return NextResponse.json(run, { status: run.status === "error" ? 500 : 200 });
