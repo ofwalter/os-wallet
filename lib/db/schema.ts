@@ -3,6 +3,7 @@ import {
   date,
   index,
   integer,
+  jsonb,
   numeric,
   pgTable,
   text,
@@ -130,9 +131,76 @@ export const syncRuns = pgTable("sync_runs", {
   error: text("error"),
 });
 
+// ---------- Assistant ----------
+
+export const agentConversations = pgTable("agent_conversations", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  title: text("title").notNull(),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+export const agentMessages = pgTable(
+  "agent_messages",
+  {
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    conversationId: integer("conversation_id")
+      .notNull()
+      .references(() => agentConversations.id, { onDelete: "cascade" }),
+    role: text("role", { enum: ["user", "assistant", "tool"] }).notNull(),
+    content: text("content").notNull().default(""),
+    // Assistant turns that called tools keep the raw calls; tool turns keep the id they answer.
+    toolCalls: jsonb("tool_calls"),
+    toolCallId: text("tool_call_id"),
+    promptTokens: integer("prompt_tokens"),
+    completionTokens: integer("completion_tokens"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("agent_messages_conversation_id_idx").on(t.conversationId)],
+);
+
+// ---------- Budget ----------
+
+/** Single row. A null income means "use my recent average". */
+export const budgetSettings = pgTable("budget_settings", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  monthlyIncome: money("monthly_income"),
+  savingsGoal: money("savings_goal").notNull().default(0),
+  updatedAt: updatedAt(),
+});
+
+export const budgetItems = pgTable("budget_items", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  // 'fixed' = a monthly constant (rent, Netflix); 'limit' = a soft cap on a category.
+  kind: text("kind", { enum: ["fixed", "limit"] }).notNull(),
+  label: text("label").notNull(),
+  categoryId: integer("category_id").references(() => categories.id, { onDelete: "cascade" }),
+  // Fixed items find their monthly payment by a case-insensitive "contains" match.
+  matchField: text("match_field", { enum: ["merchant_name", "name"] }),
+  pattern: text("pattern"),
+  amount: money("amount").notNull(),
+  dueDay: integer("due_day"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: createdAt(),
+});
+
+export const budgetInsights = pgTable("budget_insights", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  weekStart: date("week_start", { mode: "string" }).notNull().unique(),
+  content: text("content").notNull(),
+  promptTokens: integer("prompt_tokens"),
+  completionTokens: integer("completion_tokens"),
+  createdAt: createdAt(),
+});
+
 export type PlaidItem = typeof plaidItems.$inferSelect;
 export type Account = typeof accounts.$inferSelect;
 export type Category = typeof categories.$inferSelect;
 export type Transaction = typeof transactions.$inferSelect;
 export type MerchantRule = typeof merchantRules.$inferSelect;
 export type SyncRun = typeof syncRuns.$inferSelect;
+export type AgentConversation = typeof agentConversations.$inferSelect;
+export type AgentMessage = typeof agentMessages.$inferSelect;
+export type BudgetSettings = typeof budgetSettings.$inferSelect;
+export type BudgetItem = typeof budgetItems.$inferSelect;
+export type BudgetInsight = typeof budgetInsights.$inferSelect;

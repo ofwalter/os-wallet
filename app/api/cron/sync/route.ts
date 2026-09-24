@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { generateWeeklyInsight } from "@/lib/ai/insight";
 import { safeEqual } from "@/lib/session";
 import { runSync } from "@/lib/sync";
 
@@ -13,5 +14,13 @@ export async function GET(request: Request) {
   }
 
   const run = await runSync("cron");
+
+  // Weekly budget check-in: a no-op on days that already have this week's.
+  try {
+    await generateWeeklyInsight();
+  } catch (err) {
+    console.error("weekly insight failed:", err instanceof Error ? err.message : err);
+  }
+
   return NextResponse.json(run, { status: run.status === "error" ? 500 : 200 });
 }

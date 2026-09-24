@@ -33,6 +33,8 @@ ENCRYPTION_KEY=            # openssl rand -hex 32
 SESSION_SECRET=            # openssl rand -hex 32
 CRON_SECRET=               # openssl rand -hex 32
 DASHBOARD_PASSWORD_HASH=   # bcrypt hash of my password
+OPENROUTER_API_KEY=        # assistant + weekly budget check-in (server only)
+OPENROUTER_MODEL=          # default openai/gpt-5-nano
 ```
 Add a `.env.example` with these keys (no values) and a small script
 `scripts/hash-password.ts` that prints a bcrypt hash for a given password.

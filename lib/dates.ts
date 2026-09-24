@@ -45,3 +45,21 @@ export function monthLabel(iso: string, format: "short" | "long" = "short"): str
     timeZone: "UTC",
   });
 }
+
+/** Adds `days` to a YYYY-MM-DD date. */
+export function addDays(iso: string, days: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+/** Whole days from `a` to `b`. */
+export function daysBetween(a: string, b: string): number {
+  return Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
+}
+
+/** Monday of the week containing `iso`. */
+export function weekStart(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0 = Sunday
+  return addDays(iso, -((dow + 6) % 7));
+}

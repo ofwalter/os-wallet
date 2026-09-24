@@ -26,6 +26,8 @@ export type TxFilters = {
   category?: string;
   q?: string;
   review?: string;
+  sort?: string;
+  dir?: string;
 };
 
 type Preset = "all" | "this" | "last" | "30d" | "90d" | "ytd" | "custom";

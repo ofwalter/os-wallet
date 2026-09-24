@@ -15,6 +15,13 @@
       "when": 1790135687745,
       "tag": "0001_rule_amount_bounds",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790226973420,
+      "tag": "0002_assistant_budget",
+      "breakpoints": true
     }
   ]
 }

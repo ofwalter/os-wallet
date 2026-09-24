@@ -8,12 +8,16 @@ import { decrypt } from "@/lib/crypto";
 import {
   db,
   accounts,
+  agentConversations,
+  budgetItems,
+  budgetSettings,
   categories,
   merchantRules,
   plaidItems,
   transactions,
   type MerchantRule,
 } from "@/lib/db";
+import { generateWeeklyInsight, latestInsight } from "@/lib/ai/insight";
 import { isPeerToPeer, peerAmountRange } from "@/lib/category-map";
 import { describeError, plaid, plaidError } from "@/lib/plaid";
 import { runSync, syncItem } from "@/lib/sync";
@@ -267,5 +271,129 @@ export async function moveCategory(id: number, direction: "up" | "down"): Promis
   );
   await db.batch([first, ...rest]);
   refreshAll();
+  return { ok: true };
+}
+
+// ---------- Assistant ----------
+
+export async function deleteConversation(id: number): Promise<Result> {
+  await requireAuth();
+  await db.delete(agentConversations).where(eq(agentConversations.id, id));
+  revalidatePath("/agent");
+  return { ok: true };
+}
+
+export async function renameConversation(id: number, title: string): Promise<Result> {
+  await requireAuth();
+  const t = title.trim().slice(0, 80);
+  if (!t) return { ok: false, error: "Title can't be empty" };
+  await db.update(agentConversations).set({ title: t }).where(eq(agentConversations.id, id));
+  revalidatePath("/agent");
+  return { ok: true };
+}
+
+// ---------- Budget ----------
+
+const money = z.number().finite().min(0).max(10_000_000);
+
+const SettingsInput = z.object({
+  monthlyIncome: money.nullable(),
+  savingsGoal: money,
+});
+
+async function writeSettings(input: z.infer<typeof SettingsInput>) {
+  const [existing] = await db.select({ id: budgetSettings.id }).from(budgetSettings).limit(1);
+  if (existing) await db.update(budgetSettings).set(input).where(eq(budgetSettings.id, existing.id));
+  else await db.insert(budgetSettings).values(input);
+}
+
+export async function saveBudgetSettings(input: z.input<typeof SettingsInput>): Promise<Result> {
+  await requireAuth();
+  const parsed = SettingsInput.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid amounts" };
+  await writeSettings(parsed.data);
+  refreshAll();
+  return { ok: true };
+}
+
+const ItemInput = z.object({
+  kind: z.enum(["fixed", "limit"]),
+  label: z.string().trim().min(1).max(80),
+  categoryId: z.number().int().nullable().optional(),
+  matchField: z.enum(["merchant_name", "name"]).nullable().optional(),
+  pattern: z.string().trim().max(120).nullable().optional(),
+  amount: money,
+  dueDay: z.number().int().min(1).max(31).nullable().optional(),
+});
+
+const itemValues = (i: z.infer<typeof ItemInput>) => ({
+  kind: i.kind,
+  label: i.label,
+  categoryId: i.categoryId ?? null,
+  matchField: i.kind === "fixed" && i.pattern ? (i.matchField ?? "merchant_name") : null,
+  pattern: i.kind === "fixed" && i.pattern ? i.pattern : null,
+  amount: i.amount,
+  dueDay: i.dueDay ?? null,
+});
+
+/** The setup wizard: settings plus the chosen fixed bills and limits, replacing any existing items. */
+export async function createBudget(input: {
+  settings: z.input<typeof SettingsInput>;
+  items: z.input<typeof ItemInput>[];
+}): Promise<Result> {
+  await requireAuth();
+  const settings = SettingsInput.safeParse(input.settings);
+  const items = z.array(ItemInput).max(100).safeParse(input.items);
+  if (!settings.success || !items.success) return { ok: false, error: "Invalid budget" };
+  await writeSettings(settings.data);
+  await db.delete(budgetItems);
+  if (items.data.length) {
+    await db.insert(budgetItems).values(items.data.map((i, sortOrder) => ({ ...itemValues(i), sortOrder })));
+  }
+  refreshAll();
+  return { ok: true };
+}
+
+export async function upsertBudgetItem(
+  id: number | null,
+  input: z.input<typeof ItemInput>,
+): Promise<Result> {
+  await requireAuth();
+  const parsed = ItemInput.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid item" };
+  if (id) {
+    await db.update(budgetItems).set(itemValues(parsed.data)).where(eq(budgetItems.id, id));
+  } else {
+    const [{ max }] = await db
+      .select({ max: sql<number>`coalesce(max(${budgetItems.sortOrder}), -1)::int` })
+      .from(budgetItems);
+    await db.insert(budgetItems).values({ ...itemValues(parsed.data), sortOrder: max + 1 });
+  }
+  refreshAll();
+  return { ok: true };
+}
+
+export async function deleteBudgetItem(id: number): Promise<Result> {
+  await requireAuth();
+  await db.delete(budgetItems).where(eq(budgetItems.id, id));
+  refreshAll();
+  return { ok: true };
+}
+
+/** Rewrites this week's AI check-in. Once a day at most, to keep costs flat. */
+export async function regenerateInsight(): Promise<Result> {
+  await requireAuth();
+  const latest = await latestInsight();
+  if (latest && Date.now() - latest.createdAt.getTime() < 24 * 3600 * 1000) {
+    return { ok: false, error: "The check-in can be refreshed once a day." };
+  }
+  try {
+    const row = await generateWeeklyInsight({ force: true });
+    if (!row) return { ok: false, error: "Set up a budget first." };
+  } catch (err) {
+    console.error("insight failed:", err instanceof Error ? err.message : err);
+    return { ok: false, error: "Couldn't reach the AI. Try again later." };
+  }
+  revalidatePath("/budget");
   return { ok: true };
 }

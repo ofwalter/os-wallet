@@ -1,6 +1,6 @@
 "use client";
 
-import { LogOut, MoreHorizontal } from "lucide-react";
+import { Landmark, LogOut, MoreHorizontal, Tags } from "lucide-react";
 import Link from "next/link";
 import { logout } from "@/app/login/actions";
 import { Logo } from "@/components/logo";
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -83,6 +84,15 @@ export function MobileHeader({ sync }: { sync: SyncStatus }) {
               <DropdownMenuLabel className="px-1 py-1">
                 <SyncStatusLine sync={sync} />
               </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem render={<Link href="/settings/accounts" />}>
+                <Landmark />
+                Accounts
+              </DropdownMenuItem>
+              <DropdownMenuItem render={<Link href="/settings/categories" />}>
+                <Tags />
+                Categories
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <div className="flex items-center justify-between px-1 py-1.5 text-sm">
                 Theme

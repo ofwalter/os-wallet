@@ -1,6 +1,6 @@
 import { connection } from "next/server";
 import { and, asc, count, desc, eq, gte, isNull, lte, sql, type SQL } from "drizzle-orm";
-import { ChevronLeft, ChevronRight, SearchX } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, ChevronsUpDown, SearchX } from "lucide-react";
 import Link from "next/link";
 import { CategoryIcon } from "@/components/category-icon";
 import { CategorySelect } from "@/components/category-select";
@@ -27,6 +27,18 @@ function str(v: string | string[] | undefined): string | undefined {
 const isDate = (s: string | undefined): s is string => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
 const isId = (s: string | undefined): s is string => !!s && /^\d+$/.test(s);
 
+type SortKey = "date" | "merchant" | "category" | "account" | "amount";
+type SortDir = "asc" | "desc";
+// Direction used on the first click of each column.
+const DEFAULT_DIR: Record<SortKey, SortDir> = {
+  date: "desc",
+  merchant: "asc",
+  category: "asc",
+  account: "asc",
+  amount: "desc",
+};
+const isSortKey = (s: string | undefined): s is SortKey => !!s && s in DEFAULT_DIR;
+
 export default async function TransactionsPage({ searchParams }: PageProps<"/transactions">) {
   await connection(); // always render per request
   const sp = await searchParams;
@@ -38,6 +50,11 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/tra
     q: str(sp.q),
     review: str(sp.review),
   };
+  const sort: SortKey = isSortKey(f.sort) ? f.sort : "date";
+  const dir: SortDir = f.dir === "asc" || f.dir === "desc" ? f.dir : DEFAULT_DIR[sort];
+  // Keep the URL canonical: default sort/direction stay out of the query string.
+  f.sort = sort === "date" ? undefined : sort;
+  f.dir = dir === DEFAULT_DIR[sort] ? undefined : dir;
   const page = Math.max(1, Number(str(sp.page)) || 1);
 
   const where: SQL[] = [];
@@ -53,6 +70,14 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/tra
     );
   }
   const condition = where.length ? and(...where) : undefined;
+  const order = dir === "asc" ? asc : desc;
+  const sortExpr = {
+    date: transactions.date,
+    merchant: sql`lower(coalesce(${transactions.merchantName}, ${transactions.name}))`,
+    category: sql`lower(coalesce(${categories.name}, 'zzz'))`,
+    account: sql`lower(${accounts.name})`,
+    amount: transactions.amount,
+  }[sort];
   // Summary sums skip pending and excluded rows, like the dashboard totals.
   const counts = sql`not ${transactions.pending} and not ${transactions.excluded}`;
 
@@ -78,7 +103,7 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/tra
       .innerJoin(accounts, eq(transactions.accountId, accounts.id))
       .leftJoin(categories, eq(transactions.categoryId, categories.id))
       .where(condition)
-      .orderBy(desc(transactions.date), desc(transactions.id))
+      .orderBy(order(sortExpr), desc(transactions.date), desc(transactions.id))
       .limit(PAGE_SIZE)
       .offset((page - 1) * PAGE_SIZE),
     db
@@ -100,18 +125,30 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/tra
   const categoryOptions = cats.map((c) => ({ id: c.id, name: c.name, color: c.color }));
   const today = todayISO();
 
-  const pageHref = (p: number) => {
+  const href = (patch: Partial<TxFilters> & { page?: string }) => {
     const params = new URLSearchParams(
-      Object.entries({ ...f, page: String(p) }).filter((e): e is [string, string] => !!e[1]),
+      Object.entries({ ...f, ...patch }).filter((e): e is [string, string] => !!e[1]),
     );
-    return `/transactions?${params}`;
+    return params.size ? `/transactions?${params}` : "/transactions";
   };
+  const pageHref = (p: number) => href({ page: p > 1 ? String(p) : undefined });
+  const sortHref = (key: SortKey) => {
+    const nextDir = key === sort ? (dir === "asc" ? "desc" : "asc") : DEFAULT_DIR[key];
+    return href({
+      sort: key === "date" ? undefined : key,
+      dir: nextDir === DEFAULT_DIR[key] ? undefined : nextDir,
+    });
+  };
+  const sortHeader = (key: SortKey, label: string, className?: string) => (
+    <SortHeader href={sortHref(key)} label={label} active={sort === key} dir={dir} className={className} />
+  );
 
-  // Group the page by day, newest first.
+  // Sorted by date: group the page by day. Otherwise: one flat list with the date on each row.
+  const byDate = sort === "date";
   const days: { date: string; rows: typeof rows; net: number }[] = [];
   for (const r of rows) {
     const last = days.at(-1);
-    if (last?.date === r.date) last.rows.push(r);
+    if (last && (!byDate || last.date === r.date)) last.rows.push(r);
     else days.push({ date: r.date, rows: [r], net: 0 });
   }
   for (const d of days) d.net = d.rows.reduce((s, r) => s + (r.pending || r.excluded ? 0 : r.amount), 0);
@@ -153,22 +190,27 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/tra
           <>
             {/* Column headings (desktop) */}
             <div className="hidden grid-cols-[minmax(0,1fr)_11rem_10rem_7.5rem_2.25rem] items-center gap-4 border-b bg-muted/40 px-5 py-2.5 text-[0.6875rem] font-medium tracking-wide text-muted-foreground uppercase md:grid">
-              <span>Merchant</span>
-              <span>Category</span>
-              <span>Account</span>
-              <span className="text-right">Amount</span>
+              <span className="flex items-center gap-3">
+                {sortHeader("date", "Date")}
+                {sortHeader("merchant", "Merchant")}
+              </span>
+              {sortHeader("category", "Category")}
+              {sortHeader("account", "Account")}
+              {sortHeader("amount", "Amount", "justify-self-end")}
               <span />
             </div>
             {days.map((d) => (
               <section key={d.date}>
-                <div className="sticky top-14 z-10 flex items-center justify-between border-b bg-card/95 px-4 py-2 backdrop-blur md:px-5 lg:top-0">
-                  <h2 className="font-sans text-xs font-semibold tracking-normal text-foreground">
-                    {formatDayHeading(d.date, today)}
-                  </h2>
-                  <span className="text-xs text-muted-foreground tabular-nums">
-                    {d.net > 0 ? formatMoney(d.net) : d.net < 0 ? `+${formatMoney(-d.net)}` : ""}
-                  </span>
-                </div>
+                {byDate && (
+                  <div className="sticky top-14 z-10 flex items-center justify-between border-b bg-card/95 px-4 py-2 backdrop-blur md:px-5 lg:top-0">
+                    <h2 className="font-sans text-xs font-semibold tracking-normal text-foreground">
+                      {formatDayHeading(d.date, today)}
+                    </h2>
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      {d.net > 0 ? formatMoney(d.net) : d.net < 0 ? `+${formatMoney(-d.net)}` : ""}
+                    </span>
+                  </div>
+                )}
                 <ul className="divide-y">
                   {d.rows.map((t) => {
                     const merchant = t.merchantName ?? t.name;
@@ -190,6 +232,7 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/tra
                               {t.excluded && <StatusChip>Excluded</StatusChip>}
                             </div>
                             <p className="truncate text-xs text-muted-foreground">
+                              {!byDate && <span>{formatDayHeading(t.date, today)} · </span>}
                               <span className="md:hidden">
                                 {t.accountName}
                                 {t.accountMask && ` ••${t.accountMask}`}
@@ -255,6 +298,37 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/tra
         </div>
       )}
     </div>
+  );
+}
+
+function SortHeader({
+  href,
+  label,
+  active,
+  dir,
+  className,
+}: {
+  href: string;
+  label: string;
+  active: boolean;
+  dir: SortDir;
+  className?: string;
+}) {
+  const Icon = !active ? ChevronsUpDown : dir === "asc" ? ArrowUp : ArrowDown;
+  return (
+    <Link
+      href={href}
+      scroll={false}
+      aria-label={`Sort by ${label.toLowerCase()}`}
+      className={cn(
+        "group inline-flex w-fit items-center gap-1 uppercase transition-colors hover:text-foreground",
+        active && "text-foreground",
+        className,
+      )}
+    >
+      {label}
+      <Icon className={cn("size-3", !active && "opacity-40 group-hover:opacity-100")} />
+    </Link>
   );
 }
 

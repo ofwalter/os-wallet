@@ -5,6 +5,8 @@ import {
   Inbox,
   Landmark,
   LayoutGrid,
+  PiggyBank,
+  Sparkles,
   Tags,
   type LucideIcon,
 } from "lucide-react";
@@ -12,14 +14,25 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
-type NavItem = { href: string; label: string; short?: string; icon: LucideIcon; badge?: "review" };
+type NavItem = {
+  href: string;
+  label: string;
+  short?: string;
+  icon: LucideIcon;
+  badge?: "review";
+  section: "menu" | "manage";
+  /** Shown in the phone tab bar (five slots). */
+  mobile?: boolean;
+};
 
 export const NAV: NavItem[] = [
-  { href: "/", label: "Overview", short: "Home", icon: LayoutGrid },
-  { href: "/transactions", label: "Transactions", short: "Activity", icon: ArrowLeftRight },
-  { href: "/review", label: "Review", icon: Inbox, badge: "review" },
-  { href: "/settings/accounts", label: "Accounts", icon: Landmark },
-  { href: "/settings/categories", label: "Categories", icon: Tags },
+  { href: "/", label: "Overview", short: "Home", icon: LayoutGrid, section: "menu", mobile: true },
+  { href: "/transactions", label: "Transactions", short: "Activity", icon: ArrowLeftRight, section: "menu", mobile: true },
+  { href: "/budget", label: "Budget", icon: PiggyBank, section: "menu", mobile: true },
+  { href: "/agent", label: "Assistant", short: "Ask", icon: Sparkles, section: "menu", mobile: true },
+  { href: "/review", label: "Review", icon: Inbox, badge: "review", section: "menu", mobile: true },
+  { href: "/settings/accounts", label: "Accounts", icon: Landmark, section: "manage" },
+  { href: "/settings/categories", label: "Categories", icon: Tags, section: "manage" },
 ];
 
 function useIsActive() {
@@ -47,11 +60,11 @@ export function SidebarNav({ reviewCount }: { reviewCount: number }) {
   return (
     <nav className="flex flex-col gap-0.5">
       <p className="eyebrow mb-1.5 px-3">Menu</p>
-      {NAV.map(({ href, label, icon: Icon, badge }, i) => {
+      {NAV.map(({ href, label, icon: Icon, badge, section }, i) => {
         const active = isActive(href);
         return (
           <div key={href}>
-            {i === 3 && <p className="eyebrow mt-5 mb-1.5 px-3">Manage</p>}
+            {section === "manage" && NAV[i - 1]?.section !== "manage" && <p className="eyebrow mt-5 mb-1.5 px-3">Manage</p>}
             <Link
               href={href}
               aria-current={active ? "page" : undefined}
@@ -83,7 +96,7 @@ export function MobileTabBar({ reviewCount }: { reviewCount: number }) {
   return (
     <nav className="pb-safe fixed inset-x-0 bottom-0 z-40 border-t bg-background/85 backdrop-blur-xl lg:hidden">
       <ul className="mx-auto grid max-w-md grid-cols-5">
-        {NAV.map(({ href, label, short, icon: Icon, badge }) => {
+        {NAV.filter((n) => n.mobile).map(({ href, label, short, icon: Icon, badge }) => {
           const active = isActive(href);
           return (
             <li key={href}>

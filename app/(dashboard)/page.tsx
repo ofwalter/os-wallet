@@ -23,7 +23,6 @@ import { Amount, DeltaPill, Money } from "@/components/transaction-bits";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
-  APP_TIMEZONE,
   daysInMonth,
   monthEnd,
   monthLabel,
@@ -41,6 +40,7 @@ import {
   spendingByCategoryMonth,
   visibleAccountBalances,
 } from "@/lib/queries";
+import { dashboardGreeting } from "@/lib/greeting";
 import { cn } from "@/lib/utils";
 
 export const maxDuration = 300; // "Sync now" runs here
@@ -58,16 +58,6 @@ function cumulative(
     running += daily.get(`${month}-${String(i + 1).padStart(2, "0")}`) ?? 0;
     return Math.round(running * 100) / 100;
   });
-}
-
-function greeting(): string {
-  const hour = Number(
-    new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: false, timeZone: APP_TIMEZONE }).format(new Date()),
-  );
-  if (hour < 5) return "Good evening";
-  if (hour < 12) return "Good morning";
-  if (hour < 18) return "Good afternoon";
-  return "Good evening";
 }
 
 const BALANCE_GROUPS: { key: string; label: string; icon: LucideIcon; match: (type: string) => boolean }[] = [
@@ -159,8 +149,7 @@ export default async function OverviewPage() {
           day: "numeric",
           timeZone: "UTC",
         })}
-        title={greeting()}
-        description="Here's where your money stands this month."
+        {...dashboardGreeting()}
         actions={
           <>
             {toReview > 0 && (

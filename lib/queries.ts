@@ -165,3 +165,142 @@ export async function reviewCount(): Promise<number> {
 export async function listCategories() {
   return db.select().from(categories).orderBy(asc(categories.sortOrder), asc(categories.name));
 }
+
+// ---------- Merchant lookups (assistant + budget) ----------
+
+const EARLIEST = "1900-01-01";
+
+/** Lowercase letters and digits only, so "WeBeOb" matches "WE BE OB #12". */
+export const normalizeText = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+const normalizedSql = (col: SQL | typeof transactions.name) =>
+  sql`regexp_replace(lower(coalesce(${col}, '')), '[^a-z0-9]', '', 'g')`;
+const displayName = sql<string>`coalesce(${transactions.merchantName}, ${transactions.name})`;
+
+function merchantMatch(query: string): SQL | undefined {
+  const q = normalizeText(query);
+  if (!q) return undefined;
+  return sql`(position(${q} in ${normalizedSql(sql`${transactions.merchantName}`)}) > 0
+    or position(${q} in ${normalizedSql(transactions.name)}) > 0)`;
+}
+
+export type MerchantSpend = {
+  total: number;
+  count: number;
+  first: string | null;
+  last: string | null;
+  matched: { name: string; total: number; count: number }[];
+};
+
+/** Net counted amount at merchants matching `query` (refunds subtract). */
+export async function spendAtMerchant(query: string, from = EARLIEST, to = "9999-12-31"): Promise<MerchantSpend> {
+  const match = merchantMatch(query);
+  if (!match) return { total: 0, count: 0, first: null, last: null, matched: [] };
+  const rows = await withJoins(
+    db
+      .select({
+        name: displayName,
+        total: sql<number>`sum(${transactions.amount})::float8`,
+        count: sql<number>`count(*)::int`,
+        first: sql<string>`min(${transactions.date})::text`,
+        last: sql<string>`max(${transactions.date})::text`,
+      })
+      .from(transactions)
+      .$dynamic(),
+  )
+    .where(counted(from, to, match, sql`${kind} <> 'transfer'`))
+    .groupBy(displayName)
+    .orderBy(sql`sum(${transactions.amount}) desc`);
+  return {
+    total: rows.reduce((s, r) => s + r.total, 0),
+    count: rows.reduce((s, r) => s + r.count, 0),
+    first: rows.length ? rows.map((r) => r.first).sort()[0] : null,
+    last: rows.length ? rows.map((r) => r.last).sort().at(-1)! : null,
+    matched: rows.slice(0, 5).map(({ name, total, count }) => ({ name, total, count })),
+  };
+}
+
+export type TxSearch = {
+  text?: string;
+  categoryId?: number;
+  accountId?: number;
+  from?: string;
+  to?: string;
+  minAmount?: number;
+  maxAmount?: number;
+  limit?: number;
+};
+
+/** Individual transactions (pending included) on visible accounts, newest first. */
+export async function searchTransactions(f: TxSearch) {
+  const where: (SQL | undefined)[] = [eq(accounts.hidden, false)];
+  if (f.text) where.push(merchantMatch(f.text));
+  if (f.categoryId !== undefined) where.push(eq(transactions.categoryId, f.categoryId));
+  if (f.accountId !== undefined) where.push(eq(transactions.accountId, f.accountId));
+  if (f.from) where.push(gte(transactions.date, f.from));
+  if (f.to) where.push(lte(transactions.date, f.to));
+  if (f.minAmount !== undefined) where.push(gte(transactions.amount, f.minAmount));
+  if (f.maxAmount !== undefined) where.push(lte(transactions.amount, f.maxAmount));
+  return withJoins(
+    db
+      .select({
+        date: transactions.date,
+        merchant: displayName,
+        amount: transactions.amount,
+        category: categories.name,
+        account: accounts.name,
+        pending: transactions.pending,
+        excluded: transactions.excluded,
+      })
+      .from(transactions)
+      .$dynamic(),
+  )
+    .where(and(...where))
+    .orderBy(desc(transactions.date), desc(transactions.id))
+    .limit(Math.min(f.limit ?? 20, 50));
+}
+
+export async function topMerchants(from: string, to: string, limit = 10) {
+  return withJoins(
+    db
+      .select({
+        merchant: displayName,
+        total: sql<number>`sum(${transactions.amount})::float8`,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(transactions)
+      .$dynamic(),
+  )
+    .where(counted(from, to, isExpense))
+    .groupBy(displayName)
+    .orderBy(sql`sum(${transactions.amount}) desc`)
+    .limit(limit);
+}
+
+/** Counted expense transactions in a range, for recurring detection and fixed-bill matching. */
+export async function expenseTransactions(from: string, to: string) {
+  return withJoins(
+    db
+      .select({
+        id: transactions.id,
+        date: transactions.date,
+        amount: transactions.amount,
+        merchantName: transactions.merchantName,
+        name: transactions.name,
+        categoryId: transactions.categoryId,
+        categoryName: categories.name,
+        categoryColor: categories.color,
+      })
+      .from(transactions)
+      .$dynamic(),
+  )
+    .where(counted(from, to, isExpense))
+    .orderBy(asc(transactions.date));
+}
+
+export async function visibleAccountNames() {
+  return db
+    .select({ id: accounts.id, name: accounts.name, type: accounts.type, mask: accounts.mask })
+    .from(accounts)
+    .where(eq(accounts.hidden, false))
+    .orderBy(asc(accounts.name));
+}
