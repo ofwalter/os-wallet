@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/page-header";
 import { Chat } from "./chat";
 import { ConversationList, ConversationSheet } from "./conversation-list";
 
-export const metadata = { title: "Assistant" };
+export const metadata = { title: "Agent" };
 
 export default async function AgentPage({ searchParams }: PageProps<"/agent">) {
   await connection(); // always render per request
@@ -18,7 +18,7 @@ export default async function AgentPage({ searchParams }: PageProps<"/agent">) {
   return (
     <div>
       <PageHeader
-        eyebrow="Assistant"
+        eyebrow="Agent"
         title="Ask about your money"
         description="Spending, merchants, balances, bills, and your budget, in plain answers."
         actions={<ConversationSheet conversations={list} activeId={active?.id ?? null} />}

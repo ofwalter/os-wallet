@@ -6,19 +6,19 @@ import {
   Landmark,
   LayoutGrid,
   PiggyBank,
-  Sparkles,
   Tags,
-  type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
+import type { ComponentType } from "react";
 import { usePathname } from "next/navigation";
+import { AgentMark } from "@/components/agent-mark";
 import { cn } from "@/lib/utils";
 
 type NavItem = {
   href: string;
   label: string;
   short?: string;
-  icon: LucideIcon;
+  icon: ComponentType<{ className?: string; strokeWidth?: number }>;
   badge?: "review";
   section: "menu" | "manage";
   /** Shown in the phone tab bar (five slots). */
@@ -29,7 +29,7 @@ export const NAV: NavItem[] = [
   { href: "/", label: "Overview", short: "Home", icon: LayoutGrid, section: "menu", mobile: true },
   { href: "/transactions", label: "Transactions", short: "Activity", icon: ArrowLeftRight, section: "menu", mobile: true },
   { href: "/budget", label: "Budget", icon: PiggyBank, section: "menu", mobile: true },
-  { href: "/agent", label: "Assistant", short: "Ask", icon: Sparkles, section: "menu", mobile: true },
+  { href: "/agent", label: "Agent", icon: AgentMark, section: "menu", mobile: true },
   { href: "/review", label: "Review", icon: Inbox, badge: "review", section: "menu", mobile: true },
   { href: "/settings/accounts", label: "Accounts", icon: Landmark, section: "manage" },
   { href: "/settings/categories", label: "Categories", icon: Tags, section: "manage" },

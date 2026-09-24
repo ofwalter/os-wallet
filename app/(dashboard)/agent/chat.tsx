@@ -1,8 +1,9 @@
 "use client";
 
-import { ArrowUp, Sparkles } from "lucide-react";
+import { ArrowUp } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Fragment, useEffect, useRef, useState } from "react";
+import { AgentMark } from "@/components/agent-mark";
 import { Button } from "@/components/ui/button";
 import type { AgentEvent } from "@/lib/ai/agent";
 import { stripTrailingOffer } from "@/lib/ai/format";
@@ -104,11 +105,11 @@ export function Chat({
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-5 sm:px-6">
         {empty ? (
           <div className="flex h-full flex-col items-center justify-center gap-5 text-center">
-            <span className="inline-flex size-12 items-center justify-center rounded-2xl bg-brand/10 text-brand ring-1 ring-brand/15">
-              <Sparkles className="size-5" />
+            <span className="inline-flex size-16 items-center justify-center rounded-2xl bg-brand/10 text-brand ring-1 ring-brand/15">
+              <AgentMark className="size-10" strokeWidth={1.5} mood="idle" />
             </span>
             <div className="space-y-1">
-              <p className="font-heading font-semibold tracking-tight">What do you want to know?</p>
+              <p className="font-heading font-semibold tracking-tight">Agent here. What do you want to know?</p>
               <p className="mx-auto max-w-sm text-sm text-muted-foreground">
                 Ask things like “How much have I spent at Trader Joe’s this year?”
               </p>
@@ -137,7 +138,11 @@ export function Chat({
                 ) : (
                   <div className="flex max-w-[92%] gap-2.5">
                     <span className="mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-brand/10 text-brand">
-                      <Sparkles className="size-3.5" />
+                      <AgentMark
+                        className="size-5"
+                        strokeWidth={1.9}
+                        mood={i !== messages.length - 1 ? "still" : busy ? "thinking" : "idle"}
+                      />
                     </span>
                     <div className="min-w-0 pt-1 text-sm leading-relaxed">
                       {m.content ? (

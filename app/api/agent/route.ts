@@ -10,7 +10,7 @@ const Body = z.object({
   message: z.string().trim().min(1).max(2000),
 });
 
-// Streams newline-delimited JSON events (see AgentEvent) while the assistant works.
+// Streams newline-delimited JSON events (see AgentEvent) while Agent works.
 export async function POST(request: Request) {
   try {
     await requireAuth();
@@ -28,7 +28,7 @@ export async function POST(request: Request) {
         await runAgent(parsed.data, emit);
       } catch (err) {
         console.error("agent failed:", err instanceof Error ? err.message : err);
-        emit({ type: "error", message: "The assistant ran into a problem. Try again in a moment." });
+        emit({ type: "error", message: "Agent ran into a problem. Try again in a moment." });
       } finally {
         controller.close();
       }

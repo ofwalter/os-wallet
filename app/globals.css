@@ -190,3 +190,27 @@
 @utility pb-safe {
   padding-bottom: env(safe-area-inset-bottom);
 }
+
+/* Agent's eyes (components/agent-mark.tsx): an occasional blink, or a side-to-side glance while it works. */
+.agent-eyes {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .agent-blink {
+    animation: agent-blink 5s ease-in-out infinite;
+  }
+  .agent-glance {
+    animation:
+      agent-glance 1.6s ease-in-out infinite,
+      agent-blink 3.2s ease-in-out infinite;
+  }
+}
+@keyframes agent-blink {
+  0%, 90%, 100% { scale: 1 1; }
+  94% { scale: 1 0.1; }
+}
+@keyframes agent-glance {
+  0%, 100% { translate: -1px 0; }
+  50% { translate: 1px 0; }
+}
