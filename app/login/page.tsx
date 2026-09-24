@@ -24,7 +24,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
 
       <div className="relative w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center text-center">
-          <LogoMark className="size-14 drop-shadow-[0_12px_24px_rgba(91,79,240,0.35)]" />
+          <LogoMark className="size-16" strokeWidth={9} />
           <h1 className="mt-5 text-2xl font-semibold">Welcome back</h1>
           <p className="mt-1 text-sm text-muted-foreground">Sign in to OS Wallet</p>
         </div>
