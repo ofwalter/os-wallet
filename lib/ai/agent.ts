@@ -53,6 +53,8 @@ async function systemPrompt(): Promise<string> {
     "Rules:",
     "- Never guess a number or a name. Every figure and merchant must come from a tool result for THIS question, not from earlier messages. If tools return nothing, say so plainly.",
     "- For 'how much at <store>' use spend_at_merchant. Use the date ranges above; for a named month use its first to last day.",
+    "- If a tool returns an error, fix the arguments and call it again. If it lists closest merchant names, retry with the best one. Never tell me about errors or ask how to proceed.",
+    "- If I correct a name (\"it shows up as X\"), answer the earlier question again using X.",
     "- Simple question → 1–2 short sentences. Lead with the number. Plain everyday words, no jargon.",
     "- Answer only what was asked: if they ask about one category or merchant, give just that one, not the whole list.",
     "- Stop after the answer. Never end with 'If you want…', 'Would you like…' or any offer. You can only read data; for changes point to the right page (Budget, Review, Transactions, Categories).",

@@ -20,6 +20,8 @@ import {
 import { generateWeeklyInsight, latestInsight } from "@/lib/ai/insight";
 import { isPeerToPeer, peerAmountRange } from "@/lib/category-map";
 import { describeError, plaid, plaidError } from "@/lib/plaid";
+import { normalizeText } from "@/lib/queries";
+import { stablePrefix } from "@/lib/recurring";
 import { runSync, syncItem } from "@/lib/sync";
 
 type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
@@ -371,6 +373,37 @@ export async function upsertBudgetItem(
   }
   refreshAll();
   return { ok: true };
+}
+
+/** "Add to budget as a bill" from a transaction row, for bills too new to be detected. */
+export async function addBillFromTransaction(transactionId: number): Promise<Result<{ label: string }>> {
+  await requireAuth();
+  const [[settings], [t], fixed] = await Promise.all([
+    db.select({ id: budgetSettings.id }).from(budgetSettings).limit(1),
+    db.select().from(transactions).where(eq(transactions.id, transactionId)).limit(1),
+    db.select().from(budgetItems).where(eq(budgetItems.kind, "fixed")),
+  ]);
+  if (!settings) return { ok: false, error: "Set up a budget first." };
+  if (!t) return { ok: false, error: "Transaction not found" };
+  if (t.amount <= 0) return { ok: false, error: "Only charges can be bills." };
+
+  const label = t.merchantName ?? stablePrefix(t.name);
+  const existing = fixed.find((i) => {
+    if (!i.pattern) return false;
+    const field = i.matchField === "name" ? t.name : (t.merchantName ?? t.name);
+    return normalizeText(field).includes(normalizeText(i.pattern));
+  });
+  if (existing) return { ok: false, error: `Already in your budget as "${existing.label}".` };
+
+  return upsertBudgetItem(null, {
+    kind: "fixed",
+    label,
+    categoryId: t.categoryId,
+    matchField: t.merchantName ? "merchant_name" : "name",
+    pattern: label,
+    amount: Math.round(t.amount * 100) / 100,
+    dueDay: Number(t.date.slice(8, 10)),
+  }).then((r) => (r.ok ? { ok: true as const, label } : r));
 }
 
 export async function deleteBudgetItem(id: number): Promise<Result> {

@@ -174,7 +174,7 @@ export default async function BudgetPage({ searchParams }: PageProps<"/budget">)
                         kind: "fixed",
                         label: f.label,
                         amount: f.amount,
-                        categoryId: null,
+                        categoryId: f.categoryId,
                         matchField: f.matchField,
                         pattern: f.pattern,
                       }}
@@ -190,7 +190,7 @@ export default async function BudgetPage({ searchParams }: PageProps<"/budget">)
             <div className="mt-5">
               <p className="eyebrow mb-1.5 inline-flex items-center gap-1.5">
                 <Sparkles className="size-3.5 text-brand" />
-                Repeating charges not in your budget
+                Repeating charges and subscriptions not in your budget
               </p>
               <ul className="divide-y rounded-xl border border-dashed">
                 {s.newRecurring.slice(0, 6).map((b) => (
@@ -199,7 +199,8 @@ export default async function BudgetPage({ searchParams }: PageProps<"/budget">)
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{b.merchant}</p>
                       <p className="truncate text-xs text-muted-foreground">
-                        {b.months} months in a row · next ~{formatDateShort(b.nextExpected)}
+                        {b.months === 1 ? "New subscription? Charged once" : `${b.months} months in a row`} · next ~
+                        {formatDateShort(b.nextExpected)}
                       </p>
                     </div>
                     <span className="num text-sm font-medium">{formatMoneyWhole(b.amount)}</span>

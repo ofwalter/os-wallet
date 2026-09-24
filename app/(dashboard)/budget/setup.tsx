@@ -166,7 +166,8 @@ export function BudgetSetup({ draft, daysInMonth }: { draft: BudgetDraft; daysIn
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-medium">{b.merchant}</span>
                         <span className="block truncate text-xs text-muted-foreground">
-                          {b.categoryName ?? "Uncategorized"} · {b.months} months · next ~{formatDateShort(b.nextExpected)}
+                          {b.categoryName ?? "Uncategorized"} · {b.months === 1 ? "charged once so far" : `${b.months} months`} · next ~
+                          {formatDateShort(b.nextExpected)}
                         </span>
                       </span>
                       <span className="num text-sm font-medium">{formatMoneyWhole(b.amount)}</span>

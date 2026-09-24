@@ -1,10 +1,10 @@
 "use client";
 
-import { Eye, EyeOff, MoreHorizontal, Search } from "lucide-react";
+import { CalendarPlus, Eye, EyeOff, MoreHorizontal, Search } from "lucide-react";
 import Link from "next/link";
 import { useOptimistic, useTransition } from "react";
 import { toast } from "sonner";
-import { setExcluded } from "@/app/actions";
+import { addBillFromTransaction, setExcluded } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-/** Per-row "…" menu: exclude/include in totals, and jump to the merchant's history. */
+/** Per-row "…" menu: exclude/include in totals, add as a budget bill, and jump to the merchant's history. */
 export function TransactionActions({
   transactionId,
   excluded,
@@ -36,6 +36,13 @@ export function TransactionActions({
       else toast.error("Couldn't update transaction");
     });
 
+  const addBill = () =>
+    startTransition(async () => {
+      const res = await addBillFromTransaction(transactionId);
+      if (res.ok) toast.success(`${res.label} added to your fixed bills`);
+      else toast.error(res.error);
+    });
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -49,6 +56,10 @@ export function TransactionActions({
         <DropdownMenuItem onClick={toggle}>
           {isExcluded ? <Eye /> : <EyeOff />}
           {isExcluded ? "Include in totals" : "Exclude from totals"}
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={addBill}>
+          <CalendarPlus />
+          Add to budget as a bill
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem render={<Link href={`/transactions?q=${encodeURIComponent(merchant)}`} />}>

@@ -56,6 +56,7 @@ export type FixedStatus = {
   id: number;
   label: string;
   amount: number;
+  categoryId: number | null;
   categoryName: string | null;
   categoryColor: string | null;
   matchField: "merchant_name" | "name" | null;
@@ -129,6 +130,7 @@ export async function getBudgetStatus(today = todayISO()): Promise<BudgetStatus 
         id: item.id,
         label: item.label,
         amount: item.amount,
+        categoryId: item.categoryId,
         categoryName,
         categoryColor,
         matchField: item.matchField,

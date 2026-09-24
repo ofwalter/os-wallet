@@ -20,7 +20,8 @@ export type RecurringBill = {
   months: number;
   lastDate: string;
   nextExpected: string;
-  confidence: "high" | "medium";
+  /** "low" = charged once so far, but filed under Subscriptions. */
+  confidence: "high" | "medium" | "low";
 };
 
 type Tx = Awaited<ReturnType<typeof expenseTransactions>>[number];
@@ -31,7 +32,7 @@ export function amountMatches(amount: number, target: number): boolean {
 }
 
 /** "NETFLIX.COM 8443" → "NETFLIX.COM": a stable "contains" pattern from a raw bank name. */
-function stablePrefix(name: string): string {
+export function stablePrefix(name: string): string {
   const cut = name.replace(/[\s#*]*[#*]?\d[\d\s#*/-]*$/, "").trim();
   return cut.length >= 3 ? cut : name.trim();
 }
@@ -54,8 +55,34 @@ export function groupKey(t: Pick<Tx, "merchantName" | "name">): string {
   return t.merchantName ? `m:${normalizeText(t.merchantName)}` : `n:${normalizeText(t.name.replace(/\d+/g, ""))}`;
 }
 
+function bill(group: string, hits: Tx[], confidence: RecurringBill["confidence"], months: number): RecurringBill {
+  const last = hits[hits.length - 1];
+  const recent = [...hits].reverse().find((t) => t.categoryId !== null) ?? last;
+  const target = median(hits.map((t) => t.amount));
+  return {
+    key: `${group}@${Math.round(target)}`,
+    group,
+    merchant: last.merchantName ?? stablePrefix(last.name),
+    matchField: last.merchantName ? "merchant_name" : "name",
+    pattern: last.merchantName ?? stablePrefix(last.name),
+    amount: Math.round(last.amount * 100) / 100,
+    categoryId: recent.categoryId,
+    categoryName: recent.categoryName,
+    categoryColor: recent.categoryColor,
+    months,
+    lastDate: last.date,
+    nextExpected: sameDayNextMonth(last.date),
+    confidence,
+  };
+}
+
 function evaluate(group: string, hits: Tx[], today: string): RecurringBill | null {
   const months = new Set(hits.map((t) => t.date.slice(0, 7)));
+  // A new subscription has only one charge so far; the category is the only hint.
+  if (hits.length === 1) {
+    const [t] = hits;
+    return t.categoryName === "Subscriptions" && daysBetween(t.date, today) <= 35 ? bill(group, hits, "low", 1) : null;
+  }
   if (months.size < 2 || hits.length / months.size > 1.5) return null;
   const amounts = hits.map((t) => t.amount);
   const target = median(amounts);
@@ -70,22 +97,7 @@ function evaluate(group: string, hits: Tx[], today: string): RecurringBill | nul
   const last = hits[hits.length - 1];
   if (daysBetween(last.date, today) > 45) return null; // cancelled
 
-  const recent = [...hits].reverse().find((t) => t.categoryId !== null) ?? last;
-  return {
-    key: `${group}@${Math.round(target)}`,
-    group,
-    merchant: last.merchantName ?? stablePrefix(last.name),
-    matchField: last.merchantName ? "merchant_name" : "name",
-    pattern: last.merchantName ?? stablePrefix(last.name),
-    amount: Math.round(last.amount * 100) / 100,
-    categoryId: recent.categoryId,
-    categoryName: recent.categoryName,
-    categoryColor: recent.categoryColor,
-    months: months.size,
-    lastDate: last.date,
-    nextExpected: sameDayNextMonth(last.date),
-    confidence: months.size >= 3 && spread <= 0.05 ? "high" : "medium",
-  };
+  return bill(group, hits, months.size >= 3 && spread <= 0.05 ? "high" : "medium", months.size);
 }
 
 export function detectRecurring(txs: Tx[], today = todayISO()): RecurringBill[] {
@@ -99,7 +111,6 @@ export function detectRecurring(txs: Tx[], today = todayISO()): RecurringBill[] 
 
   const bills: RecurringBill[] = [];
   for (const [group, all] of groups) {
-    if (all.length < 2) continue;
     // Split a merchant into amount clusters, so Venmo rent stands out from
     // Venmo dinners and an Apple subscription from App Store purchases.
     const unassigned = new Set(all);

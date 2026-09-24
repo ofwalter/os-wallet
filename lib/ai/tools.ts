@@ -5,6 +5,7 @@ import {
   flowBetween,
   listCategories,
   monthlyCashFlow,
+  resolveMerchant,
   searchTransactions,
   spendAtMerchant,
   spendingByCategory,
@@ -18,7 +19,12 @@ import type { ToolDef } from "./openrouter";
 // Read-only tools the assistant can call. The model never writes SQL; it picks
 // a function and arguments, and every number it reports comes from here.
 
+// Small models send "" or null for "no date"; treat those as omitted rather than failing the call.
+const blankToUndefined = (v: unknown) => (v === "" || v === null ? undefined : v);
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
+const optDate = z.preprocess(blankToUndefined, date.optional());
+const optText = z.preprocess(blankToUndefined, z.string().trim().optional());
+const optNumber = z.preprocess(blankToUndefined, z.coerce.number().optional());
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
 const dateProps = {
@@ -67,10 +73,20 @@ const TOOLS = [
     "Total spent at a store or merchant (fuzzy match, ignores case and spaces). Best tool for 'how much have I spent at X'. Omit dates for all time.",
     { query: { type: "string", description: "Merchant name as the user wrote it" }, ...dateProps },
     ["query"],
-    z.object({ query: z.string().min(1), from: date.optional(), to: date.optional() }),
+    z.object({ query: z.string().min(1), from: optDate, to: optDate }),
     async ({ query, from, to }) => {
       const r = await spendAtMerchant(query, from, to);
+      if (r.how === "none") {
+        return {
+          total: 0,
+          transactions: 0,
+          note: r.suggestions.length
+            ? `No merchant matches "${query}". Closest names: ${r.suggestions.join(", ")}. Call again with one of these.`
+            : `No merchant matches "${query}".`,
+        };
+      }
       return {
+        ...(r.how === "fuzzy" && { note: `No exact match for "${query}"; used the closest name.` }),
         total: r2(r.total),
         transactions: r.count,
         first: r.first,
@@ -93,17 +109,17 @@ const TOOLS = [
     },
     [],
     z.object({
-      text: z.string().optional(),
-      category: z.string().optional(),
-      account: z.string().optional(),
-      from: date.optional(),
-      to: date.optional(),
-      min_amount: z.number().optional(),
-      max_amount: z.number().optional(),
-      limit: z.number().int().min(1).max(20).optional(),
+      text: optText,
+      category: optText,
+      account: optText,
+      from: optDate,
+      to: optDate,
+      min_amount: optNumber,
+      max_amount: optNumber,
+      limit: optNumber,
     }),
-    async (a) =>
-      searchTransactions({
+    async (a) => {
+      const rows = await searchTransactions({
         text: a.text,
         categoryId: await categoryId(a.category),
         accountId: await accountId(a.account),
@@ -111,8 +127,17 @@ const TOOLS = [
         to: a.to,
         minAmount: a.min_amount,
         maxAmount: a.max_amount,
-        limit: a.limit ?? 10,
-      }),
+        limit: Math.min(Math.max(Math.round(a.limit ?? 10), 1), 20),
+      });
+      if (rows.length || !a.text) return rows;
+      const { suggestions } = await resolveMerchant(a.text);
+      return {
+        rows: [],
+        note: suggestions.length
+          ? `Nothing matches "${a.text}". Closest merchant names: ${suggestions.join(", ")}.`
+          : `Nothing matches "${a.text}".`,
+      };
+    },
   ),
   tool(
     "spending_summary",
@@ -185,7 +210,7 @@ const TOOLS = [
   ),
   tool(
     "recurring_bills",
-    "Subscriptions and monthly bills detected from the last six months (merchant, amount, next expected date).",
+    "Subscriptions and monthly bills detected from the last six months (merchant, amount, next expected date), including new subscriptions charged once so far.",
     {},
     [],
     z.object({}),
@@ -196,6 +221,7 @@ const TOOLS = [
         category: b.categoryName,
         last: b.lastDate,
         next: b.nextExpected,
+        ...(b.months === 1 && { note: "charged once so far; likely a new subscription" }),
       })),
   ),
 ];

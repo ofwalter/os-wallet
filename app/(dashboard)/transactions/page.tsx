@@ -49,6 +49,8 @@ export default async function TransactionsPage({ searchParams }: PageProps<"/tra
     category: str(sp.category),
     q: str(sp.q),
     review: str(sp.review),
+    sort: str(sp.sort),
+    dir: str(sp.dir),
   };
   const sort: SortKey = isSortKey(f.sort) ? f.sort : "date";
   const dir: SortDir = f.dir === "asc" || f.dir === "desc" ? f.dir : DEFAULT_DIR[sort];
