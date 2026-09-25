@@ -8,6 +8,7 @@ import { Money, StatusChip } from "@/components/transaction-bits";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SpeakButton } from "@/components/voice";
 import { guidanceTips } from "@/lib/ai/guidance";
 import { generateWeeklyInsight, latestInsight } from "@/lib/ai/insight";
 import { getBudgetDraft, getBudgetSetup, getBudgetStatus, type BudgetStatus } from "@/lib/budget";
@@ -137,7 +138,12 @@ export default async function BudgetPage({ searchParams }: PageProps<"/budget">)
             <CardHeading
               title="Weekly check-in"
               subtitle={insight ? `Written ${formatRelative(insight.createdAt)}` : "A short note each Monday"}
-              action={<RefreshInsightButton />}
+              action={
+                <div className="flex items-center gap-0.5">
+                  {insight && <SpeakButton id={`insight-${insight.id}`} text={insight.content} />}
+                  <RefreshInsightButton />
+                </div>
+              }
             />
             <p className="mt-3 text-sm leading-relaxed">
               {insight?.content ?? "Your first check-in will show up here after the next daily sync."}

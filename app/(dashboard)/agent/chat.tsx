@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { AgentMark } from "@/components/agent-mark";
 import { Button } from "@/components/ui/button";
+import { MicButton, SpeakButton, speak } from "@/components/voice";
 import type { AgentEvent } from "@/lib/ai/agent";
 import { stripTrailingOffer } from "@/lib/ai/format";
 import { cn } from "@/lib/utils";
@@ -44,17 +45,21 @@ export function Chat({
       return [...prev.slice(0, -1), { ...last, content: fn(last.content) }];
     });
 
-  async function send(text: string) {
+  /** `voice`: the question was spoken, so read the answer back when it's done. */
+  async function send(text: string, { voice = false } = {}) {
     const message = text.trim();
     if (!message || busy) return;
     setInput("");
     setBusy(true);
     setStatus("Thinking…");
+    const answerId = `a${Date.now()}`;
     setMessages((prev) => [
       ...prev,
       { id: `u${Date.now()}`, role: "user", content: message },
-      { id: `a${Date.now()}`, role: "assistant", content: "" },
+      { id: answerId, role: "assistant", content: "" },
     ]);
+    let answer = "";
+    let failed = false;
 
     try {
       const res = await fetch("/api/agent", {
@@ -71,11 +76,17 @@ export function Chat({
           idRef.current = e.id;
           window.history.replaceState(null, "", `/agent?c=${e.id}`);
         } else if (e.type === "status") setStatus(e.text);
-        else if (e.type === "reset") setAnswer(() => "");
-        else if (e.type === "text") {
+        else if (e.type === "reset") {
+          answer = "";
+          setAnswer(() => "");
+        } else if (e.type === "text") {
           setStatus(null);
+          answer += e.delta;
           setAnswer((prev) => prev + e.delta);
-        } else if (e.type === "error") setAnswer(() => e.message);
+        } else if (e.type === "error") {
+          failed = true;
+          setAnswer(() => e.message);
+        }
       };
       for (;;) {
         const { value, done } = await reader.read();
@@ -88,6 +99,7 @@ export function Chat({
           if (line) handle(JSON.parse(line));
         }
       }
+      if (voice && !failed && answer.trim()) speak(String(answerId), stripTrailingOffer(answer));
     } catch (err) {
       setAnswer(() => (err instanceof Error ? err.message : "Something went wrong."));
     } finally {
@@ -146,7 +158,14 @@ export function Chat({
                     </span>
                     <div className="min-w-0 pt-1 text-sm leading-relaxed">
                       {m.content ? (
-                        <Formatted text={busy && i === messages.length - 1 ? m.content : stripTrailingOffer(m.content)} />
+                        busy && i === messages.length - 1 ? (
+                          <Formatted text={m.content} />
+                        ) : (
+                          <>
+                            <Formatted text={stripTrailingOffer(m.content)} />
+                            <SpeakButton id={String(m.id)} text={stripTrailingOffer(m.content)} className="mt-1 -ml-1.5" />
+                          </>
+                        )
                       ) : busy && i === messages.length - 1 ? (
                         <span className="inline-flex items-center gap-2 text-muted-foreground">
                           <TypingDots />
@@ -186,6 +205,7 @@ export function Chat({
             aria-label="Message"
             className="max-h-32 min-h-8 flex-1 resize-none bg-transparent py-1.5 text-sm outline-none field-sizing-content placeholder:text-muted-foreground"
           />
+          <MicButton disabled={busy} onText={(t) => send(t, { voice: true })} />
           <Button type="submit" size="icon" disabled={busy || !input.trim()} aria-label="Send">
             <ArrowUp />
           </Button>
